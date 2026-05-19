@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Add Item to Customer - Quick Item Addition</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-slide {
+            animation: fadeSlideUp 0.3s ease-out;
+        }
+        .customer-card {
+            transition: all 0.2s ease;
+            cursor: pointer;
+            border: 1px solid #e2e8f0;
+        }
+        .customer-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            border-color: #3b82f6;
+        }
+        .selected-customer {
+            background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+            border: 2px solid #3b82f6;
+            box-shadow: 0 4px 12px rgba(59,130,246,0.2);
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(59,130,246,0.2);
+            border-radius: 50%;
+            border-top-color: #3b82f6;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .toast-notify {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1000;
+            animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        .quick-add-pulse {
+            animation: pulse 0.5s ease-out;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); background-color: #f0f9ff; }
+            50% { transform: scale(1.02); background-color: #dbeafe; }
+            100% { transform: scale(1); background-color: transparent; }
+        }
+        .recent-item {
+            transition: all 0.2s;
+        }
+        .recent-item:hover {
+            background-color: #f3f4f6;
+            transform: translateX(4px);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
+
+    <div class="container mx-auto px-4 py-6 max-w-6xl">
+        <!-- Header -->
+        <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <a href="/dashboard" class="btn btn-ghost btn-sm gap-1 hover:bg-base-200 transition-all">
+                    <i class="fas fa-arrow-left"></i> Dashboard
+                </a>
+                <div class="divider divider-horizontal hidden sm:block h-6"></div>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
+                        <i class="fas fa-cube mr-2 text-indigo-500"></i>Add Item to Customer
+                    </h1>
+                    <p class="text-sm text-slate-500 mt-0.5">Quickly add items to customer inventory</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Two Column Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- LEFT COLUMN: Customer Browser -->
+            <div class="lg:col-span-5 xl:col-span-4">
+                <div class="card bg-white shadow-xl rounded-2xl overflow-hidden sticky top-4">
+                    <div class="card-header bg-gradient-to-r from-indigo-50 to-white p-5 border-b border-slate-200">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-lg font-bold flex items-center gap-2">
+                                    <i class="fas fa-users text-indigo-500"></i>
+                                    <span>Select Customer</span>
+                                </h2>
+                                <p class="text-xs text-slate-500 mt-0.5">Choose a customer to add items to</p>
+                            </div>
+                            <button id="refreshCustomersBtn" class="btn btn-sm btn-ghost btn-circle" data-tip="Refresh">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                        <div class="mt-4 relative">
+                            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                            <input type="text" id="customerSearchInput" placeholder="Search by customer name..." 
+                                   class="input input-bordered w-full pl-9 pr-10 rounded-xl bg-white border-slate-200 focus:border-indigo-300">
+                        </div>
+                        <div class="mt-2 text-xs text-slate-400">
+                            <i class="fas fa-database"></i>
+                            <span id="customerCountDisplay">0 customers loaded</span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 max-h-[500px] overflow-y-auto">
+                        <div id="customersLoadingState" class="space-y-3">
+                            <div class="skeleton h-20 w-full rounded-xl"></div>
+                            <div class="skeleton h-20 w-full rounded-xl"></div>
+                            <div class="skeleton h-20 w-full rounded-xl"></div>
+                        </div>
+
+                        <div id="customersErrorState" class="hidden alert alert-error shadow-md rounded-xl">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <span id="errorMessageText">Failed to load customers</span>
+                            <button id="retryFetchBtn" class="btn btn-sm btn-ghost ml-auto">Retry</button>
+                        </div>
+
+                        <div id="customersEmptyState" class="hidden text-center py-12 bg-slate-50 rounded-xl">
+                            <i class="fas fa-store-slash text-4xl text-slate-300 mb-3"></i>
+                            <p class="text-slate-500">No customers found</p>
+                            <a href="/customer/create" class="btn btn-sm btn-primary mt-4 gap-1">
+                                <i class="fas fa-user-plus"></i> Create Customer
+                            </a>
+                        </div>
+
+                        <div id="customersListContainer" class="hidden space-y-3"></div>
+
+                        <div id="noSearchResultsState" class="hidden text-center py-8 bg-slate-50 rounded-xl mt-2">
+                            <i class="fas fa-filter text-3xl text-slate-300 mb-2"></i>
+                            <p class="text-sm text-slate-500">No customers match your search</p>
+                            <button id="clearSearchBtn" class="btn btn-xs btn-ghost mt-2">Clear search</button>
+                        </div>
+                    </div>
+
+                    <div id="selectedCustomerPreview" class="m-4 mt-0 p-3 bg-indigo-50 rounded-xl border border-indigo-200 hidden">
+                        <div class="flex items-start gap-2">
+                            <i class="fas fa-check-circle text-indigo-500 mt-0.5"></i>
+                            <div class="flex-1">
+                                <p class="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Selected Customer</p>
+                                <p id="selectedCustomerNamePreview" class="font-bold text-indigo-900 text-sm"></p>
+                                <p id="selectedCustomerDetailsPreview" class="text-xs text-indigo-600 mt-0.5"></p>
+                            </div>
+                            <button id="clearSelectedBtn" class="btn btn-xs btn-ghost text-indigo-500">Change</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Add Item Form -->
+            <div class="lg:col-span-7 xl:col-span-8">
+                <div class="card bg-white shadow-xl rounded-2xl">
+                    <div class="card-body p-6">
+                        <div class="flex items-center gap-3 pb-3 border-b border-slate-100">
+                            <div class="bg-gradient-to-br from-emerald-500 to-teal-500 p-2 rounded-xl shadow-sm">
+                                <i class="fas fa-plus-circle text-white text-xl"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold text-slate-800">Add New Item</h2>
+                                <p class="text-sm text-slate-500">Enter the item name and add it to the selected customer's inventory</p>
+                            </div>
+                        </div>
+
+                        <div id="formDisabledOverlay" class="text-center py-12 bg-slate-50 rounded-2xl my-4">
+                            <i class="fas fa-arrow-left text-4xl text-slate-300 mb-3 block"></i>
+                            <p class="text-slate-500 font-medium">No customer selected</p>
+                            <p class="text-xs text-slate-400 mt-1">Please select a customer from the left panel first</p>
+                        </div>
+
+                        <div id="activeFormContainer" class="hidden">
+                            <form id="addItemForm" class="space-y-5 mt-2">
+                                <!-- Simple Item Name Field -->
+                                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100">
+                                    <div class="form-control">
+                                        <label class="label">
+                                            <span class="label-text font-bold text-lg flex items-center gap-2">
+                                                <i class="fas fa-cube text-indigo-500"></i>
+                                                Item Name *
+                                            </span>
+                                            <span class="label-text-alt text-info">Press Enter to add quickly</span>
+                                        </label>
+                                        <input type="text" id="itemName" 
+                                               placeholder="e.g., Laptop, Smartphone, Monitor, Keyboard, Mouse..." 
+                                               class="input input-bordered w-full py-4 text-lg focus:ring-2 focus:ring-indigo-300 rounded-xl bg-white"
+                                               autocomplete="off"
+                                               required>
+                                        <div class="mt-2 text-xs text-slate-400 flex items-center gap-2">
+                                            <i class="fas fa-info-circle"></i>
+                                            <span>Enter the item name and click the button to add it to the selected customer</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="formFeedback" class="hidden rounded-xl p-4 text-sm font-medium"></div>
+
+                                <div class="card-actions justify-end pt-4 border-t border-slate-100">
+                                    <button type="button" id="clearFormBtn" class="btn btn-ghost btn-sm gap-1">
+                                        <i class="fas fa-eraser"></i> Clear
+                                    </button>
+                                    <button type="submit" id="submitItemBtn" class="btn btn-primary gap-2 min-w-[180px] shadow-md">
+                                        <i class="fas fa-save"></i> Add Item
+                                    </button>
+                                </div>
+                            </form>
+                            
+                            <!-- Success counter and recent items -->
+                            <div id="successCounter" class="mt-4 p-3 bg-slate-50 rounded-xl hidden">
+                                <div class="flex items-center justify-between flex-wrap gap-2">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fas fa-check-circle text-green-500"></i>
+                                        <span class="text-sm font-medium">Successfully added:</span>
+                                        <span id="successCount" class="badge badge-success badge-lg">0</span>
+                                        <span class="text-xs text-slate-500">items</span>
+                                    </div>
+                                    <button id="clearSuccessCounterBtn" class="btn btn-xs btn-ghost text-slate-500">Reset</button>
+                                </div>
+                                <div id="recentItemsList" class="mt-2 text-xs text-slate-600 max-h-24 overflow-y-auto"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast-notify"></div>
+
+    <script>
+        // ==================== CONFIGURATION ====================
+        const API_BASE_URL = window.location.origin;
+        const CUSTOMERS_API_URL = `${API_BASE_URL}/api/customers`;
+        
+        // State
+        let allCustomers = [];
+        let filteredCustomers = [];
+        let selectedCustomerObj = null;
+        let successCount = 0;
+        let recentItems = [];
+        
+        // DOM elements
+        const customerSearchInput = document.getElementById('customerSearchInput');
+        const customersLoadingState = document.getElementById('customersLoadingState');
+        const customersErrorState = document.getElementById('customersErrorState');
+        const customersEmptyState = document.getElementById('customersEmptyState');
+        const customersListContainer = document.getElementById('customersListContainer');
+        const noSearchResultsState = document.getElementById('noSearchResultsState');
+        const selectedCustomerPreview = document.getElementById('selectedCustomerPreview');
+        const selectedCustomerNamePreview = document.getElementById('selectedCustomerNamePreview');
+        const selectedCustomerDetailsPreview = document.getElementById('selectedCustomerDetailsPreview');
+        const clearSelectedBtn = document.getElementById('clearSelectedBtn');
+        const refreshCustomersBtn = document.getElementById('refreshCustomersBtn');
+        const retryFetchBtn = document.getElementById('retryFetchBtn');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        const customerCountDisplay = document.getElementById('customerCountDisplay');
+        const formDisabledOverlay = document.getElementById('formDisabledOverlay');
+        const activeFormContainer = document.getElementById('activeFormContainer');
+        const addItemForm = document.getElementById('addItemForm');
+        const submitItemBtn = document.getElementById('submitItemBtn');
+        const formFeedback = document.getElementById('formFeedback');
+        const clearFormBtn = document.getElementById('clearFormBtn');
+        const successCounter = document.getElementById('successCounter');
+        const successCountSpan = document.getElementById('successCount');
+        const recentItemsList = document.getElementById('recentItemsList');
+        const clearSuccessCounterBtn = document.getElementById('clearSuccessCounterBtn');
+        const itemNameInput = document.getElementById('itemName');
+
+        // Helper functions
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const bg = type === 'success' ? 'bg-success' : (type === 'error' ? 'bg-error' : 'bg-warning');
+            const icon = type === 'success' ? 'fa-check-circle' : (type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle');
+            container.innerHTML = `
+                <div class="alert ${bg} text-white shadow-xl rounded-xl pr-8 animate-fade-slide">
+                    <i class="fas ${icon}"></i>
+                    <span>${escapeHtml(message)}</span>
+                    <button onclick="this.parentElement.remove()" class="btn btn-ghost btn-xs text-white ml-2">✕</button>
+                </div>
+            `;
+            setTimeout(() => { if (container.firstChild) container.firstChild.remove(); }, 4000);
+        }
+
+        function escapeHtml(str) { 
+            if (!str) return '';
+            return String(str).replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        function clearAllFields() {
+            itemNameInput.value = '';
+            formFeedback.classList.add('hidden');
+            itemNameInput.focus();
+        }
+
+        function updateSuccessCounter() {
+            successCountSpan.textContent = successCount;
+            if (successCount > 0) {
+                successCounter.classList.remove('hidden');
+                if (recentItems.length > 0) {
+                    recentItemsList.innerHTML = `
+                        <div class="flex flex-wrap gap-1 mt-1">
+                            ${recentItems.map(item => `
+                                <span class="badge badge-ghost badge-sm gap-1 recent-item cursor-pointer" 
+                                      onclick="document.getElementById('itemName').value='${escapeHtml(item)}'; document.getElementById('itemName').focus();">
+                                    <i class="fas fa-cube text-xs"></i> ${escapeHtml(item)}
+                                </span>
+                            `).join('')}
+                        </div>
+                        <div class="text-[10px] text-slate-400 mt-1">Click to reuse</div>
+                    `;
+                }
+            } else {
+                successCounter.classList.add('hidden');
+            }
+        }
+
+        function addRecentItem(itemName) {
+            recentItems.unshift(itemName);
+            if (recentItems.length > 5) recentItems.pop();
+            updateSuccessCounter();
+        }
+
+        function resetSuccessCounter() {
+            successCount = 0;
+            recentItems = [];
+            updateSuccessCounter();
+        }
+
+        // ==================== FETCH CUSTOMERS ====================
+        async function fetchAllCustomers() {
+            customersLoadingState.classList.remove('hidden');
+            customersErrorState.classList.add('hidden');
+            customersEmptyState.classList.add('hidden');
+            customersListContainer.classList.add('hidden');
+            noSearchResultsState.classList.add('hidden');
+            
+            try {
+                const response = await fetch(CUSTOMERS_API_URL, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                let responseData;
+                const rawText = await response.text();
+                try {
+                    responseData = JSON.parse(rawText);
+                } catch(e) {
+                    responseData = { error: "Invalid JSON response" };
+                }
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                let customers = [];
+                if (Array.isArray(responseData)) customers = responseData;
+                else if (responseData.customers && Array.isArray(responseData.customers)) customers = responseData.customers;
+                else if (responseData.data && Array.isArray(responseData.data)) customers = responseData.data;
+                else customers = [];
+                
+                allCustomers = customers;
+                customerCountDisplay.textContent = `${allCustomers.length} customers loaded`;
+                applySearchFilter();
+                customersLoadingState.classList.add('hidden');
+                
+                if (allCustomers.length === 0) customersEmptyState.classList.remove('hidden');
+                else customersListContainer.classList.remove('hidden');
+                
+            } catch (err) {
+                customersLoadingState.classList.add('hidden');
+                customersErrorState.classList.remove('hidden');
+                document.getElementById('errorMessageText').innerText = 'Unable to load customers. Please check your connection.';
+            }
+        }
+        
+        function applySearchFilter() {
+            const searchTerm = customerSearchInput.value.trim().toLowerCase();
+            filteredCustomers = !searchTerm ? [...allCustomers] : allCustomers.filter(c => {
+                const name = (c.name || c.customer_name || '').toLowerCase();
+                return name.includes(searchTerm);
+            });
+            renderCustomerList(filteredCustomers);
+            
+            if (allCustomers.length > 0 && filteredCustomers.length === 0) {
+                customersListContainer.classList.add('hidden');
+                noSearchResultsState.classList.remove('hidden');
+            } else {
+                customersListContainer.classList.remove('hidden');
+                noSearchResultsState.classList.add('hidden');
+            }
+        }
+        
+        function renderCustomerList(customers) {
+            if (!customers.length) { customersListContainer.innerHTML = ''; return; }
+            customersListContainer.innerHTML = customers.map(c => {
+                const name = c.name || c.customer_name || 'Unnamed';
+                const email = c.email || c.contact_email || '';
+                return `
+                    <div class="customer-card bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer border border-slate-200" data-customer='${escapeHtml(JSON.stringify(c))}'>
+                        <div class="flex items-start gap-3">
+                            <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                                ${name.charAt(0).toUpperCase()}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="font-bold text-slate-800 truncate">${escapeHtml(name)}</h3>
+                                ${email ? `<p class="text-xs text-slate-500 truncate">${escapeHtml(email)}</p>` : ''}
+                            </div>
+                            <i class="fas fa-chevron-right text-slate-300 mt-2 flex-shrink-0"></i>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.querySelectorAll('.customer-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const customer = JSON.parse(card.dataset.customer);
+                    selectCustomer(customer);
+                });
+            });
+        }
+        
+        function selectCustomer(customer) {
+            selectedCustomerObj = customer;
+            const name = customer.name || customer.customer_name;
+            const email = customer.email || customer.contact_email;
+            selectedCustomerNamePreview.innerText = name;
+            selectedCustomerDetailsPreview.innerText = email || 'Customer selected';
+            selectedCustomerPreview.classList.remove('hidden');
+            formDisabledOverlay.classList.add('hidden');
+            activeFormContainer.classList.remove('hidden');
+            resetSuccessCounter();
+            clearAllFields();
+            
+            // Highlight selected card
+            document.querySelectorAll('.customer-card').forEach(card => {
+                card.classList.remove('selected-customer');
+                try {
+                    const cardData = JSON.parse(card.dataset.customer);
+                    if (cardData.name === name || cardData.id === customer.id) {
+                        card.classList.add('selected-customer');
+                    }
+                } catch(e) {}
+            });
+            
+            showToast(`Customer "${name}" selected`, 'success');
+        }
+        
+        function clearSelectedCustomer() {
+            selectedCustomerObj = null;
+            selectedCustomerPreview.classList.add('hidden');
+            formDisabledOverlay.classList.remove('hidden');
+            activeFormContainer.classList.add('hidden');
+            resetSuccessCounter();
+            document.querySelectorAll('.customer-card').forEach(card => {
+                card.classList.remove('selected-customer');
+            });
+        }
+        
+        // ==================== ADD ITEM ====================
+        async function addItemToCustomer(itemName) {
+            if (!selectedCustomerObj) throw new Error('No customer selected');
+            const customerName = selectedCustomerObj.name || selectedCustomerObj.customer_name;
+            const url = `${API_BASE_URL}/api/customers/${encodeURIComponent(customerName)}/items/add-item`;
+            
+            const payload = {
+                item: itemName,
+                partnames: []
+            };
+            
+            const response = await fetch(url, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            const rawText = await response.text();
+            let result;
+            try { result = JSON.parse(rawText); } catch(e) { result = { raw: rawText }; }
+            
+            if (!response.ok) {
+                if (response.status === 405) throw new Error(`Server does not accept PATCH at this endpoint`);
+                if (response.status === 409) throw new Error(`Item "${itemName}" already exists for this customer!`);
+                throw new Error(result.error || result.message || `Server error: ${response.status}`);
+            }
+            return result;
+        }
+
+        // Form submission
+        addItemForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!selectedCustomerObj) { 
+                showToast('Please select a customer first', 'error'); 
+                return;
+            }
+            
+            const itemName = itemNameInput.value.trim();
+            if (!itemName) { 
+                showToast('Please enter an item name', 'error'); 
+                return;
+            }
+            
+            submitItemBtn.disabled = true;
+            submitItemBtn.innerHTML = '<div class="loading-spinner w-4 h-4 border-2 mr-2"></div> Adding...';
+            formFeedback.classList.add('hidden');
+            
+            try {
+                await addItemToCustomer(itemName);
+                successCount++;
+                addRecentItem(itemName);
+                
+                // Success animation
+                const formContainer = document.querySelector('#activeFormContainer .bg-gradient-to-r');
+                if (formContainer) {
+                    formContainer.classList.add('quick-add-pulse');
+                    setTimeout(() => formContainer.classList.remove('quick-add-pulse'), 500);
+                }
+                
+                formFeedback.className = 'rounded-xl p-3 text-sm bg-green-50 text-green-700 border border-green-200';
+                formFeedback.innerHTML = `<i class="fas fa-check-circle mr-2"></i> ✓ "${itemName}" added successfully!`;
+                formFeedback.classList.remove('hidden');
+                
+                // Clear input and focus for next item
+                itemNameInput.value = '';
+                itemNameInput.focus();
+                
+                showToast(`✓ "${itemName}" added`, 'success');
+                
+                // Auto-hide success message after 3 seconds
+                setTimeout(() => {
+                    if (formFeedback.classList.contains('hidden') === false) {
+                        formFeedback.classList.add('hidden');
+                    }
+                }, 3000);
+                
+            } catch (err) {
+                formFeedback.className = 'rounded-xl p-3 text-sm bg-red-50 text-red-700 border border-red-200';
+                formFeedback.innerHTML = `<i class="fas fa-times-circle mr-2"></i> ${err.message}`;
+                formFeedback.classList.remove('hidden');
+                showToast(err.message, 'error');
+                
+                // Auto-hide error message after 4 seconds
+                setTimeout(() => {
+                    if (formFeedback.classList.contains('hidden') === false) {
+                        formFeedback.classList.add('hidden');
+                    }
+                }, 4000);
+            } finally {
+                submitItemBtn.disabled = false;
+                submitItemBtn.innerHTML = '<i class="fas fa-save"></i> Add Item';
+            }
+        });
+        
+        // Clear form button
+        clearFormBtn.addEventListener('click', () => {
+            clearAllFields();
+            formFeedback.classList.add('hidden');
+        });
+        
+        clearSelectedBtn.addEventListener('click', clearSelectedCustomer);
+        clearSuccessCounterBtn.addEventListener('click', resetSuccessCounter);
+        
+        // Enter key in item name submits form
+        itemNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addItemForm.dispatchEvent(new Event('submit'));
+            }
+        });
+        
+        // Search with debounce
+        let debounceTimer;
+        customerSearchInput.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(applySearchFilter, 300);
+        });
+        
+        clearSearchBtn.addEventListener('click', () => { 
+            customerSearchInput.value = ''; 
+            applySearchFilter(); 
+        });
+        
+        refreshCustomersBtn.addEventListener('click', fetchAllCustomers);
+        retryFetchBtn.addEventListener('click', fetchAllCustomers);
+        
+        // Initial load
+        fetchAllCustomers();
+    </script>
+</body>
+</html>

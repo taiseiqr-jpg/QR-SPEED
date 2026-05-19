@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Update Process</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .form-container, .item-details-container {
+            width: 45%;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+        }
+        input {
+            margin-bottom: 15px;
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 15px;
+            cursor: pointer;
+        }
+        table {
+            margin-top: 20px;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .process-entry {
+            margin-top: 10px;
+        }
+        .process-list {
+            margin-top: 20px;
+        }
+        .process-item {
+            margin-bottom: 10px;
+        }
+        .item-details-container {
+            border-left: 2px solid #ddd;
+            padding-left: 20px;
+        }
+        .not-found {
+            color: red;
+            font-weight: bold;
+        }
+        .required-notice {
+            color: red;
+            font-size: 12px;
+            display: none;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Check Item Form -->
+    <div class="form-container">
+        <h1>Check Item</h1>
+        <form id="checkItemForm">
+            <label for="itemcode">Item Code:</label>
+            <input type="text" id="itemcode" name="itemcode" maxlength="7" required>
+            <button type="button" id="checkItemBtn">Check Item</button>
+            <!-- Move the required notice below the button -->
+            <span id="itemcodeNotice" class="required-notice">Item Code is required!</span>
+        </form>
+    </div>
+
+    <!-- Item Details Display -->
+    <div class="item-details-container">
+        <h2>Item Details</h2>
+        <div id="itemDetails"></div>
+    </div>
+
+    <!-- Update Item Process Form -->
+    <div class="form-container">
+        <h1>Update Item Process</h1>
+        <form id="updateProcessForm">
+            <div id="processContainer" style="margin-top: 20px;">
+                <h3>Process List</h3>
+                <label for="process_code">Process Code:</label>
+                <input type="text" id="process_code" name="process_code" placeholder="Enter Process Code" required>
+                <span id="processCodeNotice" class="required-notice">Process Code is required!</span>
+
+                <label for="process_name">Process Name:</label>
+                <input type="text" id="process_name" name="process_name" placeholder="Enter Process Name" required>
+                <span id="processNameNotice" class="required-notice">Process Name is required!</span>
+
+
+            </div>
+
+
+            <button type="button" id="updateProcessBtn" disabled>Update Process</button>
+
+            <div id="itemCodeError" style="display: none; color: red; font-weight: bold;">
+                Please input a valid item code.
+            </div>
+            
+            <!-- Success message prompt (Initially hidden) -->
+            <div id="successMessage" style="display: none; color: green; font-weight: bold;">
+                Product successfully updated!
+            </div>
+
+        </form>
+    </div>
+
+    <script>
+
+     
+        let productitem = ''
+        let productpartno = ''
+        let productcustomer = ''
+        let productfamily =  ''
+
+        let isItemChecked = false;
+
+        // Event listener for the "Check Item" button
+        document.getElementById('checkItemBtn').addEventListener('click', async function() {
+            const itemcode = document.getElementById('itemcode').value.trim();
+            const notice = document.getElementById('itemcodeNotice');
+
+            // Check if item code is empty and show a required notice if necessary
+            if (!itemcode) {
+                notice.style.display = 'inline'; // Show the required notice
+                isItemChecked = false;
+                return; // Simply return if no item code is entered
+            } else {
+                notice.style.display = 'none'; // Hide the notice if item code is provided
+            }
+
+            try {
+                // Make the API call to check if the item exists
+                const response = await fetch(`/api/item/${itemcode}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    displayItemDetails(result);
+                    isItemChecked = true;
+                    fillFormWithFetchedData(result);
+                    updateProcessBtn.disabled = false; // Enable the "Update Process" button
+                    
+                } else {
+                    const message = 'Item does not exist.';
+                    displayItemNotFound(message);
+                    isItemChecked = false;
+                    updateProcessBtn.disabled = true; // Disable the "Update Process" button
+                }
+            } catch (error) {
+                //console.error('Error checking item:', error);
+            }
+        });
+
+       
+            // Display item details
+        function displayItemDetails(item) {
+            const itemDetailsContainer = document.getElementById('itemDetails');
+            itemDetailsContainer.innerHTML = ''; // Clear previous item details
+
+            if (item && item.item_code) {
+                const table = document.createElement('table'); 
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Key</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Item Code</td>
+                            <td>${item.item_code}</td>
+                        </tr>
+                        <tr>
+                            <td>Part No</td>
+                            <td>${item.part_no}</td>
+                        </tr>
+                        <tr>
+                            <td>Product Family</td>
+                            <td>${item.product_family || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td>Customer</td>
+                            <td>${item.customer || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td>Processes</td>
+                            <td>
+
+                            ${
+                            item.process.map(process_items=>{
+                                //console.table(process_items);
+                                process_items = JSON.stringify(process_items)
+                                process_items = JSON.parse(process_items)
+                                process_code = Object.keys(process_items)[0];
+                                process_name = process_items[process_code];
+                                //console.log(process_code)
+                                console.log(`${process_code}-${process_name}`);
+                                return `${process_code}-${process_name}`;
+                                
+                                
+                            }).join('<br>')
+                            }
+
+                            </td>
+                        </tr>
+                    </tbody>
+                `;
+                itemDetailsContainer.appendChild(table);
+            }
+        }
+        function fillFormWithFetchedData(data){
+        if (data) {
+            // Fill global variables with the data from the API
+            productitem = data.item_code || '';  // Set default empty string if value is missing
+            productpartno = data.part_no || '';
+            productcustomer = data.customer || '';
+            productfamily = data.product_family || '';
+            isItemChecked = true;
+            console.log('Fetched data:', data);
+        }
+        
+        else {
+        console.error('No data found to fill the form');
+    }
+}
+        
+        // Display item not found message
+        function displayItemNotFound(message) {
+            const itemDetailsContainer = document.getElementById('itemDetails');
+            itemDetailsContainer.innerHTML = `<p class="not-found">${message}</p>`;
+        }
+
+  
+        // Add process to the list and update product
+        document.getElementById('updateProcessBtn').addEventListener('click', async function(event) {
+            const itemcode = document.getElementById('itemcode').value.trim();
+            const processCode = document.getElementById('process_code').value.trim();
+            const processName = document.getElementById('process_name').value.trim();
+           
+            const processCodeNotice = document.getElementById('processCodeNotice');
+            const processNameNotice = document.getElementById('processNameNotice');
+
+
+            console.log('Item Code:', itemcode);
+            console.log('Process Code:', processCode);
+            console.log('Process Name:', processName);
+            console.log('Customer:', productcustomer);
+            console.log('Part no:', productpartno);
+            console.log('family_product:', productfamily);
+
+
+             // Check if item code is valid
+            if (!itemcode) {
+                itemCodeError.style.display = 'inline'; // Show error message if item code is missing
+                return;
+    }
+
+
+            // Check if either process code or process name is empty
+            if (!processCode) {
+                processCodeNotice.style.display = 'inline'; // Show the required notice
+            } else {
+                processCodeNotice.style.display = 'none'; // Hide the notice if process code is provided
+            }
+
+            if (!processName) {
+                processNameNotice.style.display = 'inline'; // Show the required notice
+            } else {
+                processNameNotice.style.display = 'none'; // Hide the notice if process name is provided
+            }
+
+            // Proceed only if both fields are filled
+            if (processCode && processName && isItemChecked && productcustomer && productpartno && productfamily) {
+                const data = {
+                    item_code: itemcode,
+                    part_no: productpartno,
+                    process: [{ [processCode]: processName }],
+                    customer: productcustomer,
+                    product_family: productfamily
+                };
+                
+                console.log('Data to be sent to the server:', JSON.stringify(data));
+
+                try {
+                    // Make the API call to update the product process
+                    const response = await fetch(`/api/item/${itemcode}/process/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+
+                    if (response.ok) {
+                        const contentType = response.headers.get("Content-Type");
+                        if (contentType && contentType.includes("application/json")) {
+                        const result = await response.json();
+                        console.log('Response body:', result);
+                        console.log('Process updated successfully!');
+                        // Clear the input fields after successful update
+                        document.getElementById('process_code').value = '';
+                        document.getElementById('process_name').value = '';
+
+                         // Reset global variables
+                        productcustomer = '';
+                        productpartno = '';
+                        productfamily = '';
+                        isItemChecked = false;
+
+                        successMessage.style.display = 'inline';
+
+                        }
+                        else {
+                            console.error('Response is not valid JSON:', contentType);
+                        }
+                    } else {
+                        
+                        const errorMessage = await response.text(); // Log the error response if it's not OK
+                        console.error('Error response:', errorMessage);
+                    }
+                } catch (error) {
+                    console.log(error);
+                    console.error('Error updating product process:', error);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

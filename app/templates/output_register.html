@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Worker Output Register</title>
+    <style>
+        /* styles.css */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f7f7f7;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 50px auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1, h2 {
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            font-size: 14px;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input {
+            width: 100%;
+            padding: 8px;
+            font-size: 14px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        #registeredLots {
+            margin-top: 20px;
+        }
+
+        .lot {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+
+        #errorMessage {
+            color: red;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        #lotNoError, #itemCodeError, #lotQuantityError {
+            color: red;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Worker Output Register</h1>
+
+        <!-- Form to input lot details -->
+        <form id="lotForm">
+            <div class="form-group">
+                <label for="lotNo">Lot Number:</label>
+                <input type="text" id="lotNo" required maxlength="7" title="Lot number must be exactly 7 digits">
+                <small id="lotNoError" style="color: red; display: none;">Lot number must be exactly 7 digits.</small>
+            </div>
+
+            <div class="form-group">
+                <label for="itemCode">Item Code:</label>
+                <input type="text" id="itemCode" required maxlength='7'>
+                <small id="itemCodeError" style="color: red; display: none;">Item code must be exactly 7 characters.</small>
+            </div>
+
+            <div class="form-group">
+                <label for="lotQuantity">Lot Quantity:</label>
+                <input type="text" id="lotQuantity" required>
+                <small id="lotQuantityError" style="color: red; display: none;">Lot quantity must be a whole number.</small>
+            </div>
+
+            <button type="submit">Register Lot</button>
+        </form>
+
+        <h2>Registered Lots</h2>
+        <div id="registeredLots"></div>
+        <div id="errorMessage"></div> <!-- To display any errors -->
+
+    </div>
+
+    <script>
+        // script.js
+
+        let registeredLots = [];
+
+        // Handle form submission
+        document.getElementById("lotForm").addEventListener("submit", function(event) {
+            event.preventDefault(); // Prevent the default form submission behavior
+
+            // Retrieve values from the form
+            const lotNo = document.getElementById("lotNo").value.trim();
+            const itemCode = document.getElementById("itemCode").value.trim();
+            const lotQuantity = parseInt(document.getElementById("lotQuantity").value.trim()); 
+
+            // Log inputs for debugging
+            console.log("Lot No:", lotNo);
+            console.log("Lot No Length:", lotNo.length);
+            console.log("Item Code:", itemCode);
+            console.log("Lot Quantity:", lotQuantity);
+        
+            // Clear previous error messages
+            document.getElementById("lotNoError").style.display = "none";
+            document.getElementById("itemCodeError").style.display = "none";
+            document.getElementById("lotQuantityError").style.display = "none";
+
+            // Validate if all required fields are filled
+            if (lotNo === "" || itemCode === "" || isNaN(lotQuantity)) {
+                console.log("Some fields are empty or invalid.");
+                return;
+            }
+
+            // Ensure lotNo is exactly 7 digits and is a whole number
+            console.log("Validating Lot No...");
+            if (lotNo.length !== 7 || isNaN(lotNo)) {
+                console.log("Lot number validation failed.");
+                document.getElementById("lotNoError").style.display = "block";
+                return;
+            }
+
+            // Ensure itemCode is exactly 7 characters long
+            if (itemCode.length !== 7) {
+                console.log("Item code validation failed.");
+                document.getElementById("itemCodeError").style.display = "block";
+                return;
+            }
+
+            // Ensure lotQuantity is a whole number
+            if (lotQuantity !== Math.floor(lotQuantity) || isNaN(lotQuantity)) {
+                console.log("Lot quantity validation failed.");
+                document.getElementById("lotQuantityError").style.display = "block";
+                return;
+            }
+
+            console.log("Validations passed. Proceeding with registration...");
+
+            // Check if Lot No exists in the backend (optional, but recommended)
+            checkIfLotExists(lotNo).then(lotExists => {
+                if (lotExists) {
+                    console.log("Lot number already exists.");
+                    document.getElementById("lotNoError").innerText = "Lot number already exists.";
+                    document.getElementById("lotNoError").style.display = "block";
+                } else {
+                    console.log("Lot number doesn't exist. Proceeding with registration.");
+
+                    // Fetch product details to populate output_data
+                    fetchProductDetails(itemCode).then(product => {
+                        if (product) {
+                            console.log("Product found. Proceeding with output data population.");
+                    
+                            // Log the product's process array for debugging
+                            console.log("Product process:", product.process);
+                    
+                            const outputData = product.process.map((process, index) => {
+                                // Log the individual process item
+                                console.log(`Processing item at index ${index}:`, process);
+                    
+                                // Extract the process_code and process_name
+                                const process_code = Object.keys(process)[0];  // Get the process code (first key)
+                                const process_name = process[process_code];  // Get the process name by process code
+                    
+                                // Log the process_code and process_name values
+                                console.log(`Process code: ${process_code}`);
+                                console.log(`Process name: ${process_name}`);
+                    
+                                // Return the output data for the current process
+                                return {
+                                    item_no: itemCode,
+                                    process_code: process_code,
+                                    process_name: process_name,
+                                    lot_quantity: lotQuantity,
+                                    good_quantity: 0,  // Initialize with default value
+                                    defect_quantity: 0,  // Initialize with default value
+                                };
+                            });
+                    
+                            // Log the final outputData array to see the populated data
+                            console.log("Final outputData:", outputData);
+                            // Create the new lot object with hardcoded current_status and current_process_index
+                            const newLot = {
+                                lot_no: lotNo,
+                                item_code: itemCode,
+                                lot_quantity: lotQuantity,
+                                current_status: "in-progress", // Default value for current status
+                                current_process_index: 0, // Always starts from 0
+                                output_data: outputData
+                            };
+
+                            // Call the backend API to register the lot
+                            registerLot(newLot);
+                        } else {
+                            console.log("Product not found for the given item code.");
+                            document.getElementById("errorMessage").innerText = "Product not found for the given item code.";
+                        }
+                    });
+                }
+            });
+        });
+
+        // Function to check if the lot number already exists (via API)
+        function checkIfLotExists(lotNo) {
+            return fetch(`/api/output/${lotNo}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.exists) {
+                        return true;
+                    }
+                    return false;
+                })
+                .catch(error => {
+                    console.log("Error checking lot existence:", error);
+                    return false;
+                });
+        }
+
+        // Function to fetch product details based on item code (via API)
+        function fetchProductDetails(itemCode) {
+            return fetch(`/api/item/${itemCode}`)
+                .then(response => response.json())
+                .then(product => {
+                    if (product) {
+                        return product;  // Return the product details
+                    }
+                    return null;
+                })
+                .catch(error => {
+                    console.log("Error fetching product details:", error);
+                    return null;
+                });
+        }
+
+        // Function to register the lot with backend
+        function registerLot(lot) {
+            console.log("Registering Lot:", lot);
+
+            fetch("/api/worker-output", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(lot)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message === "Data added successfully") {
+                    console.log("Lot successfully registered:", data);
+                    registeredLots.push(lot); // Add to registered lots array
+                    updateLotDisplay();  // Update UI with registered lots
+                } else {
+                    console.log("Error registering lot:", data.message);
+                    document.getElementById("errorMessage").innerText = data.message;
+                }
+            })
+            .catch(error => {
+                console.log("Error during registration:", error);
+                document.getElementById("errorMessage").innerText = "Error registering lot.";
+            });
+        }
+
+        // Function to update the UI with the list of registered lots
+        function updateLotDisplay() {
+            const registeredLotsDiv = document.getElementById("registeredLots");
+        
+            // Clear any existing content in the registeredLots section
+            registeredLotsDiv.innerHTML = "";
+        
+            // Iterate through each registered lot and create a display for it
+            registeredLots.forEach(lot => {
+                const lotDiv = document.createElement("div");
+                lotDiv.classList.add("lot");
+        
+                // Check if lot.product exists and has a 'process' property
+                let processesHTML = "";
+                //console.log(lot);
+                //console.log(lot.output_data);
+                //console.log(lot.output_data);
+                if (lot.output_data && Array.isArray(lot.output_data)) {
+                    lot.output_data.forEach(process => {
+                        console.log(process.process_code);
+                        processesHTML += `<li>Process ${process.process_code}: ${process.process_name} </li>`;
+                    });
+                } else {
+                    processesHTML = "<li>No processes available</li>"; // Optional fallback
+                }
+        
+                lotDiv.innerHTML = `
+                    <h3>Lot No: ${lot.lot_no}</h3>
+                    <p><strong>Item Code:</strong> ${lot.item_code}</p>
+                    <p><strong>Lot Quantity:</strong> ${lot.lot_quantity}</p>
+                    <p><strong>Current Status:</strong> ${lot.current_status}</p>
+                    <ul>
+                        ${processesHTML}
+                    </ul>
+                `;
+        
+                // Append the new lot div to the display area
+                registeredLotsDiv.appendChild(lotDiv);
+            });
+        }
+        
+
+        // Restrict input to whole numbers for lotQuantity while typing
+        document.getElementById('lotQuantity').addEventListener('input', function() {
+            // Remove any non-digit characters
+            this.value = this.value.replace(/\D/g, '');
+
+            // Check if the value is a whole number
+            if (this.value !== '' && this.value !== Math.floor(this.value).toString()) {
+                this.setCustomValidity('Please enter a whole number.');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+
+        document.getElementById('lotNo').addEventListener('input', function() {
+            // Remove any non-digit characters
+            this.value = this.value.replace(/\D/g, '');
+        
+            // Check if the value is a whole number
+            if (this.value !== '' && this.value !== Math.floor(this.value).toString()) {
+                this.setCustomValidity('Please enter a whole number.');
+            } else {
+                this.setCustomValidity('');
+            }
+        
+            // Ensure the lot number has exactly 7 digits (and prevent input beyond that length)
+            if (this.value.length == 7) {
+                this.value = this.value.slice(0, 7); // Trim to 7 digits if the input exceeds the length
+            }
+        });
+    </script>
+</body>
+</html>

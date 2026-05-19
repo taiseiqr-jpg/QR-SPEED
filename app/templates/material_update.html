@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Material & Part Management System</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-slide {
+            animation: fadeSlideUp 0.3s ease-out;
+        }
+        .customer-card, .item-card {
+            transition: all 0.2s ease;
+            cursor: pointer;
+            border: 1px solid #e2e8f0;
+        }
+        .customer-card:hover, .item-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            border-color: #3b82f6;
+        }
+        .selected-customer, .selected-item {
+            background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+            border: 2px solid #3b82f6;
+            box-shadow: 0 4px 12px rgba(59,130,246,0.2);
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(59,130,246,0.2);
+            border-radius: 50%;
+            border-top-color: #3b82f6;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .toast-notify {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1000;
+            animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        .part-entry {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            transition: all 0.2s;
+        }
+        .part-entry:hover {
+            border-color: #cbd5e1;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .remove-part-btn {
+            transition: all 0.2s;
+        }
+        .remove-part-btn:hover {
+            transform: scale(1.1);
+        }
+        .progress-step {
+            transition: all 0.3s ease;
+        }
+        .progress-step.active {
+            background-color: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        .progress-step.completed {
+            background-color: #10b981;
+            color: white;
+            border-color: #10b981;
+        }
+        .existing-parts {
+            background: #fef9e3;
+            border-left: 4px solid #f59e0b;
+        }
+        .part-badge {
+            display: inline-block;
+            background: #f3f4f6;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            margin: 2px;
+        }
+        .part-badge-maker {
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
+
+    <div class="container mx-auto px-4 py-6 max-w-7xl">
+        <!-- Header -->
+        <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <a href="/dashboard" class="btn btn-ghost btn-sm gap-1 hover:bg-base-200 transition-all">
+                    <i class="fas fa-arrow-left"></i> Dashboard
+                </a>
+                <div class="divider divider-horizontal hidden sm:block h-6"></div>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
+                        <i class="fas fa-pallet mr-2 text-indigo-500"></i>Material & Part Management
+                    </h1>
+                    <p class="text-sm text-slate-500 mt-0.5">Add parts to customer items</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Steps -->
+        <div class="mb-8">
+            <div class="flex items-center justify-between max-w-2xl mx-auto">
+                <div class="flex flex-col items-center flex-1">
+                    <div class="w-10 h-10 rounded-full border-2 border-gray-300 bg-white flex items-center justify-center font-semibold progress-step" id="step1Badge">1</div>
+                    <span class="text-xs mt-2 text-gray-500">Select Customer</span>
+                </div>
+                <div class="flex-1 h-0.5 bg-gray-200 mx-2"></div>
+                <div class="flex flex-col items-center flex-1">
+                    <div class="w-10 h-10 rounded-full border-2 border-gray-300 bg-white flex items-center justify-center font-semibold progress-step" id="step2Badge">2</div>
+                    <span class="text-xs mt-2 text-gray-500">Select Item</span>
+                </div>
+                <div class="flex-1 h-0.5 bg-gray-200 mx-2"></div>
+                <div class="flex flex-col items-center flex-1">
+                    <div class="w-10 h-10 rounded-full border-2 border-gray-300 bg-white flex items-center justify-center font-semibold progress-step" id="step3Badge">3</div>
+                    <span class="text-xs mt-2 text-gray-500">Add Parts</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Customer Selection -->
+        <div id="step1" class="step-animation">
+            <div class="card bg-white shadow-xl rounded-2xl overflow-hidden">
+                <div class="card-header bg-gradient-to-r from-indigo-50 to-white p-5 border-b border-slate-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-bold flex items-center gap-2">
+                                <i class="fas fa-users text-indigo-500"></i>
+                                <span>Select Customer</span>
+                            </h2>
+                            <p class="text-xs text-slate-500 mt-0.5">Choose a customer to manage parts</p>
+                        </div>
+                        <button id="refreshCustomersBtn" class="btn btn-sm btn-ghost btn-circle">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="mt-4 relative">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                        <input type="text" id="customerSearchInput" placeholder="Search by customer name..." 
+                               class="input input-bordered w-full pl-9 rounded-xl bg-white border-slate-200 focus:border-indigo-300">
+                    </div>
+                </div>
+
+                <div class="p-4 max-h-[500px] overflow-y-auto">
+                    <div id="customersLoadingState" class="space-y-3">
+                        <div class="skeleton h-20 w-full rounded-xl"></div>
+                        <div class="skeleton h-20 w-full rounded-xl"></div>
+                        <div class="skeleton h-20 w-full rounded-xl"></div>
+                    </div>
+
+                    <div id="customersErrorState" class="hidden alert alert-error shadow-md rounded-xl">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span id="errorMessageText">Failed to load customers</span>
+                        <button id="retryFetchBtn" class="btn btn-sm btn-ghost ml-auto">Retry</button>
+                    </div>
+
+                    <div id="customersEmptyState" class="hidden text-center py-12 bg-slate-50 rounded-xl">
+                        <i class="fas fa-store-slash text-4xl text-slate-300 mb-3"></i>
+                        <p class="text-slate-500">No customers found</p>
+                    </div>
+
+                    <div id="customersListContainer" class="hidden space-y-3"></div>
+                </div>
+
+                <div id="selectedCustomerPreview" class="m-4 mt-0 p-3 bg-indigo-50 rounded-xl border border-indigo-200 hidden">
+                    <div class="flex items-start gap-2">
+                        <i class="fas fa-check-circle text-indigo-500 mt-0.5"></i>
+                        <div class="flex-1">
+                            <p class="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Selected Customer</p>
+                            <p id="selectedCustomerNamePreview" class="font-bold text-indigo-900 text-sm"></p>
+                        </div>
+                        <button id="clearSelectedCustomerBtn" class="btn btn-xs btn-ghost text-indigo-500">Change</button>
+                    </div>
+                </div>
+
+                <div class="p-6 pt-0 text-center">
+                    <button id="nextToItemBtn" class="btn btn-primary btn-lg gap-2 w-full md:w-auto" disabled>
+                        Next: Select Item <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Item Selection -->
+        <div id="step2" class="step-animation hidden">
+            <div class="card bg-white shadow-xl rounded-2xl overflow-hidden">
+                <div class="card-header bg-gradient-to-r from-indigo-50 to-white p-5 border-b border-slate-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-bold flex items-center gap-2">
+                                <i class="fas fa-cube text-indigo-500"></i>
+                                <span>Select Item</span>
+                            </h2>
+                            <p class="text-xs text-slate-500 mt-0.5" id="selectedCustomerDisplay">Choose an item for the selected customer</p>
+                        </div>
+                        <button id="refreshItemsBtn" class="btn btn-sm btn-ghost btn-circle">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="mt-4 relative">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                        <input type="text" id="itemSearchInput" placeholder="Search by item name..." 
+                               class="input input-bordered w-full pl-9 rounded-xl bg-white border-slate-200 focus:border-indigo-300">
+                    </div>
+                </div>
+
+                <div class="p-4 max-h-[500px] overflow-y-auto">
+                    <div id="itemsLoadingState" class="space-y-3">
+                        <div class="skeleton h-20 w-full rounded-xl"></div>
+                        <div class="skeleton h-20 w-full rounded-xl"></div>
+                        <div class="skeleton h-20 w-full rounded-xl"></div>
+                    </div>
+
+                    <div id="itemsErrorState" class="hidden alert alert-error shadow-md rounded-xl">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span id="itemsErrorMessage">Failed to load items</span>
+                        <button id="retryItemsBtn" class="btn btn-sm btn-ghost ml-auto">Retry</button>
+                    </div>
+
+                    <div id="itemsEmptyState" class="hidden text-center py-12 bg-slate-50 rounded-xl">
+                        <i class="fas fa-box-open text-4xl text-slate-300 mb-3"></i>
+                        <p class="text-slate-500">No items found for this customer</p>
+                    </div>
+
+                    <div id="itemsListContainer" class="hidden space-y-3"></div>
+                </div>
+
+                <div id="selectedItemPreview" class="m-4 mt-0 p-3 bg-indigo-50 rounded-xl border border-indigo-200 hidden">
+                    <div class="flex items-start gap-2">
+                        <i class="fas fa-check-circle text-indigo-500 mt-0.5"></i>
+                        <div class="flex-1">
+                            <p class="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Selected Item</p>
+                            <p id="selectedItemNamePreview" class="font-bold text-indigo-900 text-sm"></p>
+                        </div>
+                        <button id="clearSelectedItemBtn" class="btn btn-xs btn-ghost text-indigo-500">Change</button>
+                    </div>
+                </div>
+
+                <div class="p-6 pt-0 flex gap-3 justify-center">
+                    <button id="backToCustomerBtn" class="btn btn-outline btn-lg gap-2">
+                        <i class="fas fa-arrow-left"></i> Back
+                    </button>
+                    <button id="nextToPartsBtn" class="btn btn-primary btn-lg gap-2" disabled>
+                        Next: Add Parts <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Parts Addition -->
+        <div id="step3" class="step-animation hidden">
+            <div class="card bg-white shadow-xl rounded-2xl">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-3 pb-3 border-b border-slate-100">
+                        <div class="bg-gradient-to-br from-emerald-500 to-teal-500 p-2 rounded-xl shadow-sm">
+                            <i class="fas fa-cogs text-white text-xl"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-800">Add Parts</h2>
+                            <p class="text-sm text-slate-500" id="selectionSummary">Add parts for the selected item</p>
+                        </div>
+                    </div>
+
+                    <!-- Summary Cards -->
+                    <div class="bg-primary/10 rounded-lg p-4 mb-4">
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span class="text-gray-500">Customer:</span>
+                                <p class="font-semibold text-gray-800" id="summaryCustomer">-</p>
+                            </div>
+                            <div>
+                                <span class="text-gray-500">Item:</span>
+                                <p class="font-semibold text-gray-800" id="summaryItem">-</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Existing Parts Display -->
+                    <div id="existingPartsContainer" class="hidden existing-parts rounded-lg p-4 mb-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fas fa-boxes text-amber-600"></i>
+                            <span class="text-sm font-semibold text-amber-800">Existing Parts</span>
+                        </div>
+                        <div id="existingPartsList" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    
+                    <!-- Parts List Container -->
+                    <div id="partsListContainer" class="space-y-3 mb-4">
+                        <div id="noPartsMessage" class="text-center py-8 text-gray-400">
+                            <i class="fas fa-info-circle text-3xl mb-2 block"></i>
+                            <p>No new parts added yet. Click "Add Part" to get started.</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Add Part Button -->
+                    <button type="button" id="addPartBtn" class="btn btn-outline btn-primary gap-2 w-full mb-4">
+                        <i class="fas fa-plus-circle"></i> Add New Part
+                    </button>
+                    
+                    <div id="formError" class="alert alert-error hidden mb-4">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <span id="errorMessage"></span>
+                    </div>
+                    
+                    <div id="formSuccess" class="alert alert-success hidden mb-4">
+                        <i class="fas fa-check-circle"></i>
+                        <span id="successMessage"></span>
+                    </div>
+                    
+                    <div class="flex gap-4 justify-between pt-4">
+                        <button type="button" id="backToItemBtn" class="btn btn-outline">
+                            <i class="fas fa-arrow-left"></i> Back to Items
+                        </button>
+                        <button type="button" id="submitPartsBtn" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save All Parts
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Success Modal -->
+        <dialog id="successModal" class="modal modal-bottom sm:modal-middle">
+            <div class="modal-box text-center">
+                <div class="text-6xl text-success mb-4">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <h3 class="text-2xl font-bold mb-2">Parts Added Successfully!</h3>
+                <p class="text-gray-600 mb-4">All parts have been recorded in the system.</p>
+                <div class="bg-gray-50 rounded-lg p-4 mb-6 text-left text-sm">
+                    <p><strong>Customer:</strong> <span id="successCustomer"></span></p>
+                    <p><strong>Item:</strong> <span id="successItem"></span></p>
+                    <p><strong>Parts Added:</strong> <span id="successPartCount"></span></p>
+                </div>
+                <div class="modal-action justify-center">
+                    <button id="addAnotherBtn" class="btn btn-primary">Add More Parts</button>
+                    <button id="closeModalBtn" class="btn btn-outline">Close</button>
+                </div>
+            </div>
+        </dialog>
+    </div>
+
+    <div id="toastContainer" class="toast-notify"></div>
+
+    <script>
+        // ==================== CONFIGURATION ====================
+        const API_BASE_URL = window.location.origin;
+        const CUSTOMERS_API_URL = `${API_BASE_URL}/api/customers`;
+        
+        // State
+        let allCustomers = [];
+        let selectedCustomerObj = null;
+        let selectedItemData = null;  // Stores { item: "name", partnames: [...] }
+        let partsList = [];
+        
+        // DOM Elements
+        const customerSearchInput = document.getElementById('customerSearchInput');
+        const customersLoadingState = document.getElementById('customersLoadingState');
+        const customersErrorState = document.getElementById('customersErrorState');
+        const customersEmptyState = document.getElementById('customersEmptyState');
+        const customersListContainer = document.getElementById('customersListContainer');
+        const selectedCustomerPreview = document.getElementById('selectedCustomerPreview');
+        const selectedCustomerNamePreview = document.getElementById('selectedCustomerNamePreview');
+        const clearSelectedCustomerBtn = document.getElementById('clearSelectedCustomerBtn');
+        const refreshCustomersBtn = document.getElementById('refreshCustomersBtn');
+        const retryFetchBtn = document.getElementById('retryFetchBtn');
+        const nextToItemBtn = document.getElementById('nextToItemBtn');
+        
+        const itemSearchInput = document.getElementById('itemSearchInput');
+        const itemsLoadingState = document.getElementById('itemsLoadingState');
+        const itemsErrorState = document.getElementById('itemsErrorState');
+        const itemsEmptyState = document.getElementById('itemsEmptyState');
+        const itemsListContainer = document.getElementById('itemsListContainer');
+        const selectedItemPreview = document.getElementById('selectedItemPreview');
+        const selectedItemNamePreview = document.getElementById('selectedItemNamePreview');
+        const clearSelectedItemBtn = document.getElementById('clearSelectedItemBtn');
+        const refreshItemsBtn = document.getElementById('refreshItemsBtn');
+        const retryItemsBtn = document.getElementById('retryItemsBtn');
+        const backToCustomerBtn = document.getElementById('backToCustomerBtn');
+        const nextToPartsBtn = document.getElementById('nextToPartsBtn');
+        
+        const addPartBtn = document.getElementById('addPartBtn');
+        const submitPartsBtn = document.getElementById('submitPartsBtn');
+        const backToItemBtn = document.getElementById('backToItemBtn');
+        
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const bg = type === 'success' ? 'bg-success' : (type === 'error' ? 'bg-error' : 'bg-warning');
+            const icon = type === 'success' ? 'fa-check-circle' : (type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle');
+            container.innerHTML = `
+                <div class="alert ${bg} text-white shadow-xl rounded-xl pr-8 animate-fade-slide">
+                    <i class="fas ${icon}"></i>
+                    <span>${escapeHtml(message)}</span>
+                    <button onclick="this.parentElement.remove()" class="btn btn-ghost btn-xs text-white ml-2">✕</button>
+                </div>
+            `;
+            setTimeout(() => { if (container.firstChild) container.firstChild.remove(); }, 4000);
+        }
+
+        function escapeHtml(str) { 
+            if (!str) return '';
+            return String(str).replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        // ==================== STEP NAVIGATION ====================
+        function showStep(step) {
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step3').classList.add('hidden');
+            document.getElementById(`step${step}`).classList.remove('hidden');
+            
+            for (let i = 1; i <= 3; i++) {
+                const badge = document.getElementById(`step${i}Badge`);
+                badge.classList.remove('active', 'completed');
+                if (i < step) badge.classList.add('completed');
+                else if (i === step) badge.classList.add('active');
+            }
+        }
+
+        // ==================== FETCH CUSTOMERS ====================
+        async function fetchAllCustomers() {
+            customersLoadingState.classList.remove('hidden');
+            customersErrorState.classList.add('hidden');
+            customersEmptyState.classList.add('hidden');
+            customersListContainer.classList.add('hidden');
+            
+            try {
+                const response = await fetch(CUSTOMERS_API_URL, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                const data = await response.json();
+                console.log('Customers loaded:', data);
+                
+                if (Array.isArray(data)) allCustomers = data;
+                else if (data.customers && Array.isArray(data.customers)) allCustomers = data.customers;
+                else if (data.data && Array.isArray(data.data)) allCustomers = data.data;
+                else allCustomers = [];
+                
+                customersLoadingState.classList.add('hidden');
+                
+                if (allCustomers.length === 0) {
+                    customersEmptyState.classList.remove('hidden');
+                } else {
+                    customersListContainer.classList.remove('hidden');
+                    applyCustomerFilter();
+                }
+            } catch (err) {
+                console.error('Error fetching customers:', err);
+                customersLoadingState.classList.add('hidden');
+                customersErrorState.classList.remove('hidden');
+                document.getElementById('errorMessageText').innerText = err.message;
+            }
+        }
+        
+        function applyCustomerFilter() {
+            const searchTerm = customerSearchInput.value.trim().toLowerCase();
+            const filtered = !searchTerm ? [...allCustomers] : allCustomers.filter(c => {
+                const name = (c.name || c.customer_name || '').toLowerCase();
+                return name.includes(searchTerm);
+            });
+            renderCustomerList(filtered);
+        }
+        
+        function renderCustomerList(customers) {
+            if (!customers.length) {
+                customersListContainer.innerHTML = '<div class="text-center py-8 text-slate-500">No customers match your search</div>';
+                return;
+            }
+            
+            customersListContainer.innerHTML = customers.map(customer => {
+                const name = customer.name || customer.customer_name || 'Unnamed';
+                const email = customer.email || customer.contact_email || '';
+                const isSelected = selectedCustomerObj && (selectedCustomerObj.id === customer.id || selectedCustomerObj.name === name);
+                return `
+                    <div class="customer-card bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer border border-slate-200 ${isSelected ? 'selected-customer' : ''}" 
+                         data-customer='${escapeHtml(JSON.stringify(customer))}'>
+                        <div class="flex items-start gap-3">
+                            <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                                ${name.charAt(0).toUpperCase()}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="font-bold text-slate-800 truncate">${escapeHtml(name)}</h3>
+                                ${email ? `<p class="text-xs text-slate-500 truncate">${escapeHtml(email)}</p>` : ''}
+                            </div>
+                            <i class="fas fa-chevron-right text-slate-300 mt-2 flex-shrink-0"></i>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.querySelectorAll('.customer-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const customer = JSON.parse(card.dataset.customer);
+                    selectCustomer(customer);
+                });
+            });
+        }
+        
+        function selectCustomer(customer) {
+            selectedCustomerObj = customer;
+            const name = customer.name || customer.customer_name;
+            selectedCustomerNamePreview.innerText = name;
+            selectedCustomerPreview.classList.remove('hidden');
+            nextToItemBtn.disabled = false;
+            
+            // Reset item selection when customer changes
+            selectedItemData = null;
+            selectedItemPreview.classList.add('hidden');
+            
+            document.querySelectorAll('.customer-card').forEach(card => {
+                card.classList.remove('selected-customer');
+                try {
+                    const cardData = JSON.parse(card.dataset.customer);
+                    if (cardData.name === name || cardData.id === customer.id) {
+                        card.classList.add('selected-customer');
+                    }
+                } catch(e) {}
+            });
+            
+            showToast(`Customer "${name}" selected`, 'success');
+        }
+        
+        function clearSelectedCustomer() {
+            selectedCustomerObj = null;
+            selectedItemData = null;
+            selectedCustomerPreview.classList.add('hidden');
+            selectedItemPreview.classList.add('hidden');
+            nextToItemBtn.disabled = true;
+            nextToPartsBtn.disabled = true;
+            document.querySelectorAll('.customer-card').forEach(card => {
+                card.classList.remove('selected-customer');
+            });
+        }
+        
+        // ==================== FETCH ITEMS FOR CUSTOMER ====================
+        async function fetchItemsForCustomer() {
+            if (!selectedCustomerObj) return;
+            
+            const customerName = selectedCustomerObj.name || selectedCustomerObj.customer_name;
+            const url = `${API_BASE_URL}/api/customers/${encodeURIComponent(customerName)}/items`;
+            
+            itemsLoadingState.classList.remove('hidden');
+            itemsErrorState.classList.add('hidden');
+            itemsEmptyState.classList.add('hidden');
+            itemsListContainer.classList.add('hidden');
+            
+            try {
+                const response = await fetch(url, { 
+                    method: 'GET', 
+                    headers: { 'Accept': 'application/json' } 
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Items API response:', data);
+                
+                // Handle the new response format
+                // Response format: { status: "success", customer: "name", items: [...], total_items: n }
+                let itemsArray = [];
+                if (data.items && Array.isArray(data.items)) {
+                    itemsArray = data.items;
+                } else if (Array.isArray(data)) {
+                    itemsArray = data;
+                }
+                
+                itemsLoadingState.classList.add('hidden');
+                
+                if (itemsArray.length === 0) {
+                    itemsEmptyState.classList.remove('hidden');
+                    itemsListContainer.classList.add('hidden');
+                } else {
+                    itemsListContainer.classList.remove('hidden');
+                    renderItemList(itemsArray);
+                }
+            } catch (err) {
+                console.error('Error fetching items:', err);
+                itemsLoadingState.classList.add('hidden');
+                itemsErrorState.classList.remove('hidden');
+                document.getElementById('itemsErrorMessage').innerHTML = err.message;
+            }
+        }
+        
+        function renderItemList(items) {
+            if (!items.length) {
+                itemsListContainer.innerHTML = '<div class="text-center py-8 text-slate-500">No items found</div>';
+                return;
+            }
+            
+            itemsListContainer.innerHTML = items.map(item => {
+                const itemName = item.item || item.name || 'Unnamed';
+                const partCount = item.partnames ? item.partnames.length : 0;
+                const isSelected = selectedItemData && selectedItemData.item === itemName;
+                return `
+                    <div class="item-card bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer border border-slate-200 ${isSelected ? 'selected-item' : ''}" 
+                         data-item='${escapeHtml(JSON.stringify(item))}'>
+                        <div class="flex items-start gap-3">
+                            <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                                ${itemName.charAt(0).toUpperCase()}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="font-bold text-slate-800 truncate">${escapeHtml(itemName)}</h3>
+                                ${partCount > 0 ? `<p class="text-xs text-slate-500 mt-1"><i class="fas fa-microchip"></i> ${partCount} existing part(s)</p>` : '<p class="text-xs text-slate-400 mt-1">No parts yet</p>'}
+                            </div>
+                            <i class="fas fa-chevron-right text-slate-300 mt-2 flex-shrink-0"></i>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.querySelectorAll('.item-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const item = JSON.parse(card.dataset.item);
+                    selectItem(item);
+                });
+            });
+        }
+        
+        function selectItem(item) {
+            selectedItemData = item;
+            const itemName = item.item || item.name;
+            selectedItemNamePreview.innerText = itemName;
+            selectedItemPreview.classList.remove('hidden');
+            nextToPartsBtn.disabled = false;
+            
+            document.querySelectorAll('.item-card').forEach(card => {
+                card.classList.remove('selected-item');
+                try {
+                    const cardData = JSON.parse(card.dataset.item);
+                    if ((cardData.item === itemName) || (cardData.name === itemName)) {
+                        card.classList.add('selected-item');
+                    }
+                } catch(e) {}
+            });
+            
+            showToast(`Item "${itemName}" selected`, 'success');
+        }
+        
+        function clearSelectedItem() {
+            selectedItemData = null;
+            selectedItemPreview.classList.add('hidden');
+            nextToPartsBtn.disabled = true;
+            document.querySelectorAll('.item-card').forEach(card => {
+                card.classList.remove('selected-item');
+            });
+        }
+        
+        // ==================== PARTS MANAGEMENT ====================
+        function showExistingParts() {
+            if (!selectedItemData || !selectedItemData.partnames || selectedItemData.partnames.length === 0) {
+                document.getElementById('existingPartsContainer').classList.add('hidden');
+                return;
+            }
+            
+            const container = document.getElementById('existingPartsContainer');
+            const listContainer = document.getElementById('existingPartsList');
+            
+            const partsHtml = selectedItemData.partnames.map(part => `
+                <span class="part-badge">
+                    <i class="fas fa-cog text-xs mr-1"></i>
+                    ${escapeHtml(part.part_name)}
+                    <span class="part-badge-maker ml-1 px-1.5 py-0.5 rounded text-xs">${escapeHtml(part.maker)}</span>
+                </span>
+            `).join('');
+            
+            listContainer.innerHTML = partsHtml;
+            container.classList.remove('hidden');
+        }
+        
+        function renderPartsList() {
+            const container = document.getElementById('partsListContainer');
+            const noPartsMsg = document.getElementById('noPartsMessage');
+            
+            if (partsList.length === 0) {
+                if (noPartsMsg) noPartsMsg.classList.remove('hidden');
+                container.innerHTML = '<div id="partsEntries"></div><div id="noPartsMessage" class="text-center py-8 text-gray-400"><i class="fas fa-info-circle text-3xl mb-2 block"></i><p>No new parts added yet. Click "Add New Part" to get started.</p></div>';
+                return;
+            }
+            
+            if (noPartsMsg) noPartsMsg.classList.add('hidden');
+            
+            const entriesHtml = partsList.map((part, index) => `
+                <div class="part-entry" data-part-index="${index}">
+                    <div class="flex justify-between items-start mb-3">
+                        <h4 class="font-semibold text-gray-700">New Part #${index + 1}</h4>
+                        <button type="button" class="btn btn-sm btn-ghost text-error remove-part-btn" onclick="removePart(${index})">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="label-text text-sm font-medium">Part Name <span class="text-error">*</span></label>
+                            <input type="text" class="input input-bordered w-full part-name-input" value="${escapeHtml(part.part_name)}" placeholder="e.g., CPU, GPU, RAM">
+                        </div>
+                        <div>
+                            <label class="label-text text-sm font-medium">Maker <span class="text-error">*</span></label>
+                            <input type="text" class="input input-bordered w-full part-maker-input" value="${escapeHtml(part.maker)}" placeholder="e.g., Intel, AMD, NVIDIA">
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            container.innerHTML = `<div id="partsEntries">${entriesHtml}</div>`;
+            
+            partsList.forEach((_, index) => {
+                const partDiv = document.querySelector(`.part-entry[data-part-index="${index}"]`);
+                if (partDiv) {
+                    const nameInput = partDiv.querySelector('.part-name-input');
+                    const makerInput = partDiv.querySelector('.part-maker-input');
+                    if (nameInput) nameInput.addEventListener('input', (e) => { partsList[index].part_name = e.target.value; });
+                    if (makerInput) makerInput.addEventListener('input', (e) => { partsList[index].maker = e.target.value; });
+                }
+            });
+        }
+        
+        window.removePart = function(index) {
+            partsList.splice(index, 1);
+            renderPartsList();
+        };
+        
+        function addNewPart() {
+            partsList.push({ part_name: "", maker: "" });
+            renderPartsList();
+        }
+        
+        // ==================== SAVE PARTS ====================
+        async function savePartsToAPI() {
+            if (partsList.length === 0) throw new Error('Please add at least one part');
+            const invalidParts = partsList.filter(p => !p.part_name.trim() || !p.maker.trim());
+            if (invalidParts.length > 0) throw new Error(`Please fill in both Part Name and Maker for all parts`);
+            
+            const customerName = selectedCustomerObj.name || selectedCustomerObj.customer_name;
+            const itemName = selectedItemData.item || selectedItemData.name;
+            const url = `${API_BASE_URL}/api/customers/${encodeURIComponent(customerName)}/items/${encodeURIComponent(itemName)}/parts/add`;
+            
+            const payload = partsList.map(p => ({ 
+                part_name: p.part_name.trim(), 
+                maker: p.maker.trim() 
+            }));
+            
+            console.log('Saving parts:', { url, payload });
+            
+            const response = await fetch(url, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.message || error.error || `HTTP ${response.status}`);
+            }
+            return await response.json();
+        }
+        
+        async function submitAllParts() {
+            const submitBtn = document.getElementById('submitPartsBtn');
+            const errorDiv = document.getElementById('formError');
+            const errorMsg = document.getElementById('errorMessage');
+            const successDiv = document.getElementById('formSuccess');
+            const successMsg = document.getElementById('successMessage');
+            
+            errorDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<div class="loading-spinner w-4 h-4 border-2 mr-2"></div> Saving...';
+            
+            try {
+                const result = await savePartsToAPI();
+                console.log('Save result:', result);
+                
+                document.getElementById('successCustomer').innerText = selectedCustomerObj.name || selectedCustomerObj.customer_name;
+                document.getElementById('successItem').innerText = selectedItemData.item || selectedItemData.name;
+                document.getElementById('successPartCount').innerText = partsList.length;
+                document.getElementById('successModal').showModal();
+                
+                successMsg.innerText = `${partsList.length} part(s) added successfully!`;
+                successDiv.classList.remove('hidden');
+                setTimeout(() => successDiv.classList.add('hidden'), 3000);
+                
+                // Refresh items to show updated parts
+                await fetchItemsForCustomer();
+                
+                partsList = [];
+                renderPartsList();
+                showToast(`${partsList.length} part(s) added successfully!`, 'success');
+                
+            } catch (err) {
+                errorMsg.innerText = err.message;
+                errorDiv.classList.remove('hidden');
+                setTimeout(() => errorDiv.classList.add('hidden'), 5000);
+                showToast(err.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-save"></i> Save All Parts';
+            }
+        }
+        
+        function resetForNewParts() {
+            partsList = [];
+            renderPartsList();
+            showStep(3);
+            document.getElementById('summaryCustomer').innerText = selectedCustomerObj.name || selectedCustomerObj.customer_name;
+            document.getElementById('summaryItem').innerText = selectedItemData.item || selectedItemData.name;
+            document.getElementById('selectionSummary').innerHTML = `Adding parts for <strong class="text-primary">${escapeHtml(selectedCustomerObj.name || selectedCustomerObj.customer_name)}</strong> / <strong class="text-secondary">${escapeHtml(selectedItemData.item || selectedItemData.name)}</strong>`;
+            showExistingParts();
+        }
+        
+        function resetAndStartOver() {
+            selectedCustomerObj = null;
+            selectedItemData = null;
+            partsList = [];
+            clearSelectedCustomer();
+            clearSelectedItem();
+            showStep(1);
+            fetchAllCustomers();
+        }
+        
+        // ==================== EVENT LISTENERS ====================
+        customerSearchInput.addEventListener('input', () => setTimeout(applyCustomerFilter, 300));
+        refreshCustomersBtn.addEventListener('click', fetchAllCustomers);
+        retryFetchBtn.addEventListener('click', fetchAllCustomers);
+        clearSelectedCustomerBtn.addEventListener('click', clearSelectedCustomer);
+        
+        nextToItemBtn.addEventListener('click', () => {
+            if (selectedCustomerObj) {
+                showStep(2);
+                const customerName = selectedCustomerObj.name || selectedCustomerObj.customer_name;
+                document.getElementById('selectedCustomerDisplay').innerHTML = `Selected: <strong class="text-primary">${escapeHtml(customerName)}</strong> - Choose an item`;
+                fetchItemsForCustomer();
+            }
+        });
+        
+        backToCustomerBtn.addEventListener('click', () => showStep(1));
+        
+        itemSearchInput.addEventListener('input', () => {
+            const searchTerm = itemSearchInput.value.trim().toLowerCase();
+            // Re-render with filtered items - we need to store the full items array
+            if (window.currentItemsArray) {
+                const filtered = window.currentItemsArray.filter(item => {
+                    const name = (item.item || item.name || '').toLowerCase();
+                    return name.includes(searchTerm);
+                });
+                renderItemList(filtered);
+            }
+        });
+        
+        refreshItemsBtn.addEventListener('click', fetchItemsForCustomer);
+        retryItemsBtn.addEventListener('click', fetchItemsForCustomer);
+        clearSelectedItemBtn.addEventListener('click', clearSelectedItem);
+        
+        nextToPartsBtn.addEventListener('click', () => {
+            if (selectedCustomerObj && selectedItemData) {
+                showStep(3);
+                document.getElementById('summaryCustomer').innerText = selectedCustomerObj.name || selectedCustomerObj.customer_name;
+                document.getElementById('summaryItem').innerText = selectedItemData.item || selectedItemData.name;
+                document.getElementById('selectionSummary').innerHTML = `Adding parts for <strong class="text-primary">${escapeHtml(selectedCustomerObj.name || selectedCustomerObj.customer_name)}</strong> / <strong class="text-secondary">${escapeHtml(selectedItemData.item || selectedItemData.name)}</strong>`;
+                partsList = [];
+                renderPartsList();
+                showExistingParts();
+            }
+        });
+        
+        backToItemBtn.addEventListener('click', () => showStep(2));
+        addPartBtn.addEventListener('click', addNewPart);
+        submitPartsBtn.addEventListener('click', submitAllParts);
+        
+        document.getElementById('addAnotherBtn').addEventListener('click', () => {
+            document.getElementById('successModal').close();
+            resetForNewParts();
+        });
+        
+        document.getElementById('closeModalBtn').addEventListener('click', () => {
+            document.getElementById('successModal').close();
+            resetAndStartOver();
+        });
+        
+        // Store items array for filtering
+        const originalFetchItems = fetchItemsForCustomer;
+        window.fetchItemsForCustomer = async function() {
+            await originalFetchItems();
+            // Store the current items array for filtering
+            if (window.currentItemsArray) {
+                // Items are already stored in the closure
+            }
+        };
+        
+        // Override renderItemList to store the items array
+        const originalRenderItemList = renderItemList;
+        window.renderItemList = function(items) {
+            window.currentItemsArray = items;
+            originalRenderItemList(items);
+        };
+        
+        // Initialize
+        fetchAllCustomers();
+        showStep(1);
+        
+        console.log('Material & Part Management System Ready');
+        console.log('API Endpoints:');
+        console.log('  - GET /api/customers - List all customers');
+        console.log('  - GET /api/customers/{customer_name}/items - Get items with parts');
+        console.log('  - POST /api/customers/{customer_name}/items/{item_name}/parts/add - Add parts');
+    </script>
+</body>
+</html>

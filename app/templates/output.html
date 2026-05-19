@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>QR Scanner Verification | Camera QR Scan + Cross-Check</title>
+    <!-- DaisyUI + Tailwind v4 -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- HTML5 QR Code Library for camera scanning -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 1.5rem;
+        }
+        button:active { transform: scale(0.98); }
+        input:focus, textarea:focus {
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.3);
+            outline: none;
+        }
+        .spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .transition-fade {
+            transition: opacity 0.25s ease-in-out;
+        }
+        #qr-reader {
+            width: 100%;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        }
+        #qr-reader video {
+            border-radius: 1rem;
+            width: 100%;
+        }
+        #qr-reader__scan_region {
+            background: #f3f4f6;
+            border-radius: 1rem;
+        }
+        .camera-guide {
+            position: absolute;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            pointer-events: none;
+        }
+        .scanner-container {
+            position: relative;
+        }
+        .api-config-panel {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+        }
+        .output-master-scroll {
+            max-height: min(42vh, 320px);
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+        }
+        .output-master-row { cursor: pointer; transition: background 0.15s ease; }
+        .output-master-row:hover { background: #f3f4f6; }
+        .output-master-row-selected { background: #dbeafe !important; }
+        @media (max-width: 640px) {
+            #scannerScreen .flex.gap-3 {
+                flex-direction: column;
+            }
+            #scannerScreen .flex.gap-3 > button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body class="font-sans antialiased flex flex-col items-center justify-start p-4 md:p-6">
+
+<div class="w-full max-w-4xl mx-auto">
+    <!-- Main Card -->
+    <div id="appContainer" class="glass-card shadow-2xl overflow-hidden border border-gray-200">
+
+        <!-- ✅ DaisyUI Navbar -->
+        <div class="navbar bg-base-100 border-b border-gray-200 px-4">
+            <!-- Left: hamburger (decorative / future menu) -->
+
+            <!-- Center: Title -->
+            <div class="flex-1">
+                <div>
+                    <p id="viewTitle" class="btn btn-ghost text-base font-bold bg-gradient-to-r from-blue-700 to-indigo-700 bg-clip-text text-transparent">
+                        QR Scanner Verification
+                    </p>
+                    <p id="viewSubtitle" class="text-xs text-gray-400 -mt-1 pl-4">Scan QR Code & Cross-Verify with Database</p>
+                </div>
+            </div>
+
+            <!-- Right: Logout button -->
+            <div class="flex-none">
+                <button id="globalLogoutBtn"
+                        class="btn btn-ghost btn-square text-error tooltip tooltip-left"
+                        data-tip="Logout"
+                        onclick="confirmLogout()">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block h-5 w-5 stroke-current">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- API Configuration Banner (collapsible) -->
+        <div id="apiConfigBanner" class="hidden api-config-panel mx-6 mt-4 p-3 rounded-lg">
+            <div class="flex items-start gap-2">
+                <i class="fas fa-cog text-amber-600 mt-0.5"></i>
+                <div class="flex-1">
+                    <p class="text-sm font-semibold text-amber-800">API Configuration</p>
+                    <p class="text-xs text-amber-700 mt-1">Current endpoint:</p>
+                    <div class="mt-2">
+                        <code id="currentApiEndpoint" class="text-xs bg-amber-100 px-2 py-1 rounded break-all block font-mono"></code>
+                    </div>
+                    <p class="text-xs text-amber-600 mt-2">
+                        <i class="fas fa-info-circle"></i> Make sure your backend server is running at http://127.0.0.1:8000
+                    </p>
+                    <button id="closeApiBanner" class="mt-2 text-xs text-amber-700 hover:text-amber-900 underline">
+                        <i class="fas fa-times"></i> Dismiss
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dynamic Content Area -->
+        <div class="p-6 md:p-7 bg-white">
+            <!-- 1️⃣ MASTER LIST + LOT (same data as admin QR Verify) -->
+            <div id="userInputScreen" class="transition-fade">
+                <p class="text-sm text-gray-600 mb-4">
+                    <i class="fas fa-info-circle text-blue-500 mr-1"></i>
+                    Search the master list, then <strong class="font-semibold">tap a row</strong> to open the camera and scan. Item, part, and maker come from the selected row; lot number is optional.
+                </p>
+                <div class="mb-4">
+                    <label class="block text-gray-700 font-semibold mb-2 text-sm">
+                        <i class="fas fa-barcode mr-2 text-blue-600"></i>Lot number <span class="text-gray-500 font-normal">(optional)</span>
+                    </label>
+                    <input type="text" id="lotNoInput" placeholder="e.g., LOT-2024-001 — not required to match QR"
+                           class="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:border-blue-400 transition">
+                </div>
+                <div class="flex items-start justify-between gap-2 mb-2">
+                    <h3 class="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                        <i class="fas fa-list-ul text-blue-600"></i> Master list (items &amp; parts)
+                    </h3>
+                    <button type="button" id="outputMasterRefreshBtn" class="btn btn-ghost btn-xs gap-1 shrink-0">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+                <div class="relative mb-2">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none"></i>
+                    <input type="text" id="outputMasterSearch" autocomplete="off" placeholder="Filter by customer, item, part, maker…"
+                           class="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:border-blue-400 transition">
+                </div>
+                <div id="outputMasterLoading" class="hidden py-8 text-center text-sm text-gray-500">
+                    <div class="spinner mx-auto mb-2"></div> Loading master list…
+                </div>
+                <div id="outputMasterError" class="hidden rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-xs px-3 py-2 mb-2">
+                    <i class="fas fa-exclamation-triangle mr-1"></i><span id="outputMasterErrorMsg"></span>
+                </div>
+                <div id="outputMasterEmpty" class="hidden rounded-xl border border-gray-200 bg-gray-50 text-gray-600 text-xs px-3 py-2 mb-2">
+                    <i class="fas fa-inbox mr-1"></i> No rows yet. Ask an admin to register customers, items, and materials.
+                </div>
+                <div id="outputMasterTableWrap" class="hidden output-master-scroll mb-3">
+                    <table class="table table-sm w-full">
+                        <thead class="sticky top-0 z-[1] bg-gray-100/95 backdrop-blur">
+                            <tr>
+                                <th class="text-xs text-gray-700">Customer</th>
+                                <th class="text-xs text-gray-700">Item</th>
+                                <th class="text-xs text-gray-700">Part</th>
+                                <th class="text-xs text-gray-700">Maker</th>
+                            </tr>
+                        </thead>
+                        <tbody id="outputMasterBody"></tbody>
+                    </table>
+                </div>
+                <div id="outputMasterPager" class="hidden mt-3 flex items-center justify-between gap-2 text-xs">
+                    <span id="outputMasterPageInfo" class="text-gray-500">Page 1</span>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="outputMasterPrevBtn" class="btn btn-ghost btn-xs">Prev</button>
+                        <button type="button" id="outputMasterNextBtn" class="btn btn-ghost btn-xs">Next</button>
+                    </div>
+                </div>
+                <p id="outputMasterNoMatch" class="hidden text-xs text-center text-gray-500 py-2 mb-2">No rows match your filter.</p>
+                <div id="userInputError" class="text-red-500 text-sm mb-1 min-h-[24px]"></div>
+            </div>
+
+            <!-- 2️⃣ QR SCANNER SCREEN -->
+            <div id="scannerScreen" class="hidden transition-fade">
+                <div class="text-center mb-4">
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-50 text-indigo-600 mb-2">
+                        <i class="fas fa-camera-retro text-2xl"></i>
+                    </div>
+                    <h2 class="text-xl font-bold text-gray-800">Scan QR Code</h2>
+                    <p class="text-gray-500 text-sm">Position the QR code within the camera frame</p>
+                </div>
+
+                <div class="scanner-container relative mb-4">
+                    <div id="qr-reader" style="width: 100%;"></div>
+                    <div class="camera-guide">
+                        <i class="fas fa-qrcode mr-1"></i> Align QR code in frame
+                    </div>
+                </div>
+
+                <div id="scannedDataPreview" class="hidden bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
+                    <p class="text-xs font-semibold text-green-700 mb-2"><i class="fas fa-check-circle"></i> QR Code Scanned Successfully</p>
+                    <div id="scannedDataContent" class="text-sm font-mono text-gray-700 space-y-1 break-all"></div>
+                </div>
+
+                <div class="flex gap-3">
+                    <button id="verifyScannedBtn"
+                            class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled>
+                        <i class="fas fa-check-double"></i> Cross-Verify with Backend
+                    </button>
+                    <button id="rescanBtn"
+                            class="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2">
+                        <i class="fas fa-sync-alt"></i> Rescan
+                    </button>
+                </div>
+                <div class="mt-2">
+                    <button id="scanImageBtn"
+                            class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2.5 rounded-xl border border-slate-300 transition flex items-center justify-center gap-2">
+                        <i class="fas fa-image"></i> Scan From QR Image
+                    </button>
+                    <input id="scanImageInput" type="file" accept="image/*" class="hidden">
+                </div>
+
+                <button id="backToUserFromScannerBtn"
+                        class="w-full mt-3 text-gray-500 hover:text-gray-700 text-sm border border-gray-200 py-2.5 rounded-xl transition hover:bg-gray-50 flex items-center justify-center gap-1">
+                    <i class="fas fa-arrow-left"></i> Back to master list
+                </button>
+
+                <div id="scannerStatus" class="mt-4 text-center text-sm font-medium min-h-[48px]"></div>
+            </div>
+
+            <!-- 3️⃣ RESULT SCREEN -->
+            <div id="resultScreen" class="hidden transition-fade text-center">
+                <div id="resultIcon" class="mx-auto w-20 h-20 rounded-full flex items-center justify-center mb-4 shadow-inner"></div>
+                <h2 id="resultTitle" class="text-2xl font-extrabold text-gray-800"></h2>
+                <p id="resultMessage" class="text-gray-600 mt-2 mb-4"></p>
+
+                <div class="bg-gray-50 rounded-xl p-4 my-4 text-left border border-gray-200 max-h-64 overflow-auto">
+                    <p class="text-xs font-semibold text-gray-500 mb-2"><i class="fas fa-info-circle"></i> VERIFICATION DETAILS</p>
+                    <div id="resultDetails" class="text-sm text-gray-700 space-y-1"></div>
+                </div>
+
+                <div class="flex gap-3">
+                    <button id="newVerificationBtn"
+                            class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2">
+                        <i class="fas fa-plus-circle"></i> New Verification
+                    </button>
+                    <button id="forceLogoutBtn"
+                            class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition flex items-center justify-center gap-2">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer Status -->
+        <div class="px-6 py-3 bg-gray-50 text-right text-xs text-gray-500 border-t border-gray-200 flex justify-between items-center">
+            <span id="footerStatus"><i class="fas fa-circle-info text-blue-400"></i> Ready</span>
+            <span id="apiEndpointBadge" class="text-gray-400 font-mono text-[11px] cursor-pointer hover:text-blue-600" onclick="toggleApiBanner()">
+                <i class="fas fa-edit"></i> API: /api/verify/cross-check
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ DaisyUI Logout Confirmation Modal -->
+<dialog id="logoutModal" class="modal">
+    <div class="modal-box max-w-sm">
+        <h3 class="font-bold text-lg text-gray-800">
+            <i class="fas fa-sign-out-alt text-red-500 mr-2"></i>Confirm Logout
+        </h3>
+        <p class="py-4 text-gray-600 text-sm">Are you sure you want to logout? All current session data will be cleared and you will be redirected to the login page.</p>
+        <div class="modal-action gap-2">
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('logoutModal').close()">
+                Cancel
+            </button>
+            <button id="confirmLogoutBtn" class="btn btn-error btn-sm text-white">
+                <i class="fas fa-sign-out-alt mr-1"></i> Yes, Logout
+            </button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+
+<script>
+    // ======================== DOM Elements ========================
+    const userInputScreen = document.getElementById('userInputScreen');
+    const scannerScreen = document.getElementById('scannerScreen');
+    const resultScreen = document.getElementById('resultScreen');
+
+    const lotNoInput = document.getElementById('lotNoInput');
+    const userInputError = document.getElementById('userInputError');
+    const outputMasterSearch = document.getElementById('outputMasterSearch');
+    const outputMasterBody = document.getElementById('outputMasterBody');
+    const outputMasterLoading = document.getElementById('outputMasterLoading');
+    const outputMasterError = document.getElementById('outputMasterError');
+    const outputMasterErrorMsg = document.getElementById('outputMasterErrorMsg');
+    const outputMasterEmpty = document.getElementById('outputMasterEmpty');
+    const outputMasterTableWrap = document.getElementById('outputMasterTableWrap');
+    const outputMasterNoMatch = document.getElementById('outputMasterNoMatch');
+    const outputMasterRefreshBtn = document.getElementById('outputMasterRefreshBtn');
+    const outputMasterPager = document.getElementById('outputMasterPager');
+    const outputMasterPageInfo = document.getElementById('outputMasterPageInfo');
+    const outputMasterPrevBtn = document.getElementById('outputMasterPrevBtn');
+    const outputMasterNextBtn = document.getElementById('outputMasterNextBtn');
+
+    const verifyScannedBtn = document.getElementById('verifyScannedBtn');
+    const rescanBtn = document.getElementById('rescanBtn');
+    const scanImageBtn = document.getElementById('scanImageBtn');
+    const scanImageInput = document.getElementById('scanImageInput');
+    const backToUserFromScannerBtn = document.getElementById('backToUserFromScannerBtn');
+    const scannerStatus = document.getElementById('scannerStatus');
+    const scannedDataPreview = document.getElementById('scannedDataPreview');
+    const scannedDataContent = document.getElementById('scannedDataContent');
+
+    const resultIcon = document.getElementById('resultIcon');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultMessage = document.getElementById('resultMessage');
+    const resultDetails = document.getElementById('resultDetails');
+    const newVerificationBtn = document.getElementById('newVerificationBtn');
+    const forceLogoutBtn = document.getElementById('forceLogoutBtn');
+
+    const viewTitle = document.getElementById('viewTitle');
+    const viewSubtitle = document.getElementById('viewSubtitle');
+    const footerStatus = document.getElementById('footerStatus');
+    const apiConfigBanner = document.getElementById('apiConfigBanner');
+    const currentApiEndpoint = document.getElementById('currentApiEndpoint');
+    const closeApiBanner = document.getElementById('closeApiBanner');
+    const confirmLogoutBtn = document.getElementById('confirmLogoutBtn');
+
+    // ======================== API Configuration ========================
+    const API_BASE_URL = window.location.origin;
+    const VERIFY_ENDPOINT = "/api/verify/cross-check";
+    const MASTER_ROWS_ENDPOINT = "/api/qr/selection/rows";
+    const VERIFICATION_LOGS_ENDPOINT = "/api/verification/logs";
+    const FULL_API_URL = API_BASE_URL + VERIFY_ENDPOINT;
+    const MASTER_ROWS_URL = API_BASE_URL + MASTER_ROWS_ENDPOINT;
+    const VERIFICATION_LOGS_URL = API_BASE_URL + VERIFICATION_LOGS_ENDPOINT;
+    // Login page redirect URL (can be configured as needed)
+    const LOGIN_REDIRECT_URL = "/login";
+
+    // ======================== App State ========================
+    let currentUserInput = { item_name: '', part_name: '', part_maker: '', lot_no: '' };
+    let scannedQRData = null;
+    let html5QrCode = null;
+    let isScanning = false;
+    let isProcessingScan = false;
+
+    let masterListRows = [];
+    let selectedMasterIdx = null;
+    let currentEmployee = null;
+
+    // Pagination state
+    let masterListMeta = {
+        page: 1,
+        page_size: 50,
+        total_rows: 0,
+        total_pages: 0,
+        has_prev: false,
+        has_next: false
+    };
+
+    function loadCurrentEmployee() {
+        try {
+            const raw = sessionStorage.getItem("employee");
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === "object" ? parsed : null;
+        } catch (e) {
+            console.warn("Could not parse session employee data:", e);
+            return null;
+        }
+    }
+
+    function flattenCustomersToMasterRows(customers) {
+        const rows = [];
+        (Array.isArray(customers) ? customers : []).forEach((c) => {
+            (c.items || []).forEach((it) => {
+                (it.partnames || []).forEach((p) => {
+                    if (p.part_name) {
+                        rows.push({
+                            customer_name: c.customer_name || "",
+                            item: it.item || "",
+                            part_name: p.part_name,
+                            maker: p.maker || "",
+                        });
+                    }
+                });
+            });
+        });
+        return rows;
+    }
+
+    function escCell(s) {
+        if (s == null || s === "") return "";
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function updateOutputMasterPager() {
+        const pager = document.getElementById("outputMasterPager");
+        const info = document.getElementById("outputMasterPageInfo");
+        const prevBtn = document.getElementById("outputMasterPrevBtn");
+        const nextBtn = document.getElementById("outputMasterNextBtn");
+        if (!pager || !info || !prevBtn || !nextBtn) return;
+        if (masterListMeta.total_rows <= 0) {
+            pager.classList.add("hidden");
+            return;
+        }
+        pager.classList.remove("hidden");
+        info.textContent = `Page ${masterListMeta.page} of ${masterListMeta.total_pages || 1} (${masterListMeta.total_rows} rows)`;
+        prevBtn.disabled = !masterListMeta.has_prev;
+        nextBtn.disabled = !masterListMeta.has_next;
+    }
+
+    function renderOutputMasterList() {
+        const tbody = document.getElementById("outputMasterBody");
+        const noMatch = document.getElementById("outputMasterNoMatch");
+        const wrap = document.getElementById("outputMasterTableWrap");
+        if (!tbody || !noMatch || !wrap) return;
+        if (selectedMasterIdx !== null && !masterListRows[selectedMasterIdx]) {
+            selectedMasterIdx = null;
+        }
+        tbody.innerHTML = "";
+        if (masterListRows.length === 0) {
+            noMatch.classList.remove("hidden");
+            updateOutputMasterPager();
+            return;
+        }
+        noMatch.classList.add("hidden");
+        masterListRows.forEach((r, idx) => {
+            const tr = document.createElement("tr");
+            tr.className = "output-master-row" + (selectedMasterIdx === idx ? " output-master-row-selected" : "");
+            tr.tabIndex = 0;
+            tr.innerHTML = `<td class="text-xs">${escCell(r.customer_name)}</td><td class="text-xs font-medium text-gray-800">${escCell(r.item)}</td><td class="text-xs">${escCell(r.part_name)}</td><td class="text-xs">${escCell(r.maker)}</td>`;
+            tr.addEventListener("click", () => onOutputMasterRowSelected(idx));
+            tr.addEventListener("keydown", (ev) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    onOutputMasterRowSelected(idx);
+                }
+            });
+            tbody.appendChild(tr);
+        });
+        updateOutputMasterPager();
+    }
+
+    async function onOutputMasterRowSelected(idx) {
+        selectedMasterIdx = idx;
+        renderOutputMasterList();
+        await switchToScannerScreen();
+    }
+
+    async function loadOutputMasterList(page = 1) {
+        const loading = document.getElementById("outputMasterLoading");
+        const errBox = document.getElementById("outputMasterError");
+        const empty = document.getElementById("outputMasterEmpty");
+        const wrap = document.getElementById("outputMasterTableWrap");
+        const noMatch = document.getElementById("outputMasterNoMatch");
+        if (!loading || !errBox || !empty || !wrap) return;
+        loading.classList.remove("hidden");
+        errBox.classList.add("hidden");
+        empty.classList.add("hidden");
+        wrap.classList.add("hidden");
+        noMatch.classList.add("hidden");
+        document.getElementById("outputMasterBody").innerHTML = "";
+        try {
+            const searchValue = (document.getElementById("outputMasterSearch")?.value || "").trim();
+            const params = new URLSearchParams({
+                page: String(page),
+                page_size: String(masterListMeta.page_size),
+                search: searchValue,
+            });
+            const resp = await fetch(`${MASTER_ROWS_URL}?${params.toString()}`, { method: "GET", headers: { Accept: "application/json" } });
+            if (!resp.ok) throw new Error("Server returned " + resp.status);
+            const data = await resp.json();
+            masterListRows = Array.isArray(data.rows) ? data.rows : [];
+            masterListMeta = data.pagination || masterListMeta;
+            loading.classList.add("hidden");
+            selectedMasterIdx = null;
+            if (masterListRows.length === 0) {
+                empty.classList.remove("hidden");
+                renderOutputMasterList();
+                return;
+            }
+            wrap.classList.remove("hidden");
+            renderOutputMasterList();
+        } catch (e) {
+            loading.classList.add("hidden");
+            errBox.classList.remove("hidden");
+            document.getElementById("outputMasterErrorMsg").textContent = e.message || "Could not load master list.";
+        }
+    }
+
+    // ======================== Helper: Redirect to Login ========================
+    function redirectToLogin() {
+        // Simple client-side redirect to login page
+        // Supports both relative and absolute paths - using full origin to ensure correct navigation
+        const loginUrl = window.location.origin + LOGIN_REDIRECT_URL;
+        window.location.href = loginUrl;
+    }
+
+    // ======================== Enhanced logout with redirect ========================
+    async function performLogoutAndRedirect() {
+        // Stop any ongoing camera scanning to release resources
+        if (html5QrCode) {
+            try {
+                if (isScanning) {
+                    await html5QrCode.stop();
+                }
+                isScanning = false;
+            } catch (e) {
+                console.warn("Error stopping scanner during logout:", e);
+            }
+        }
+        
+        // Clear all session data / localStorage if any (optional cleanup)
+        // In a real app you might also call a backend logout endpoint here
+        try {
+            // Optional: Clear any stored tokens or session items
+            // sessionStorage.clear(); // Uncomment if using sessionStorage
+            // localStorage.removeItem('authToken'); // Example if token stored
+        } catch(e) { console.warn(e); }
+        
+        // Small delay to ensure cleanup before redirect (smooth experience)
+        setTimeout(() => {
+            redirectToLogin();
+        }, 50);
+    }
+
+    function confirmLogout() {
+        document.getElementById('logoutModal').showModal();
+    }
+
+    function toggleApiBanner() {
+        apiConfigBanner.classList.toggle('hidden');
+    }
+
+    function updateApiDisplay() {
+        if (currentApiEndpoint) currentApiEndpoint.textContent = FULL_API_URL;
+    }
+
+    function setFooterMessage(msg, isError = false) {
+        footerStatus.innerHTML = isError
+            ? `<i class="fas fa-exclamation-triangle text-amber-500"></i> ${msg}`
+            : `<i class="fas fa-circle-info text-blue-400"></i> ${msg}`;
+    }
+
+    async function saveVerificationLogForUser(apiResponse) {
+        if (!scannedQRData || !currentUserInput.item_name) return;
+        const resolvedStatus = apiResponse?.status === "GOOD" ? "GOOD" : "NO_GOOD";
+        const verifiedByName =
+            (currentEmployee?.username || "").trim() ||
+            (currentEmployee?.employee_id || "").trim() ||
+            "user";
+        const payload = {
+            qr_uuid: scannedQRData.qr_uuid,
+            qr_item: scannedQRData.item || "",
+            part_name: scannedQRData.part?.name || "",
+            part_maker: scannedQRData.part?.maker || "",
+            lot_no: scannedQRData.lot_no || "",
+            user_item: currentUserInput.item_name || "",
+            user_part: currentUserInput.part_name || "",
+            status: resolvedStatus,
+            result: resolvedStatus,
+            backend_updated: true,
+            verified_by: verifiedByName
+        };
+        try {
+            const resp = await fetch(VERIFICATION_LOGS_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            if (!resp.ok) {
+                console.error("Failed to save user verification log:", await resp.text());
+            }
+        } catch (e) {
+            console.error("Failed to save user verification log:", e);
+        }
+    }
+
+    function validateMasterSelection() {
+        if (selectedMasterIdx === null || !masterListRows[selectedMasterIdx]) {
+            userInputError.innerText = 'Select a row from the master list.';
+            return false;
+        }
+        const r = masterListRows[selectedMasterIdx];
+        const item = (r.item || "").trim();
+        const part = (r.part_name || "").trim();
+        const maker = (r.maker || "").trim();
+        if (!item) { userInputError.innerText = 'Selected row is missing item name.'; return false; }
+        if (!part) { userInputError.innerText = 'Selected row is missing part name.'; return false; }
+        if (!maker) { userInputError.innerText = 'Selected row is missing part maker.'; return false; }
+        userInputError.innerText = '';
+        return true;
+    }
+
+    function parseQRData(qrText) {
+        try {
+            let cleanText = typeof qrText === "string" ? qrText : "";
+            if (cleanText && cleanText.charCodeAt(0) === 0xFEFF) cleanText = cleanText.slice(1);
+            cleanText = cleanText.trim();
+
+            if (/^\d+$/.test(cleanText) && cleanText.length < 15) return null;
+
+            if (!cleanText.startsWith("{")) {
+                const jsonMatch = cleanText.match(/\{.*\}/s);
+                if (!jsonMatch) return null;
+                cleanText = jsonMatch[0];
+            }
+
+            const parsed = JSON.parse(cleanText);
+            const qr_uuid = parsed.qr_uuid || parsed.uuid || parsed.id;
+            const item = parsed.item || parsed.item_name;
+            let partName = '', partMaker = '';
+            if (parsed.part) {
+                partName = parsed.part.name || parsed.part;
+                partMaker = parsed.part.maker || '';
+            } else {
+                partName = parsed.part_name || parsed.partName || '';
+                partMaker = parsed.part_maker || parsed.partMaker || parsed.maker || '';
+            }
+            const lot_no = parsed.lot_no || parsed.lot_number || parsed.lot;
+            if (qr_uuid && item && partName && lot_no) {
+                return { qr_uuid, item, part: { name: partName, maker: partMaker || '' }, lot_no, status: parsed.status || null };
+            }
+            throw new Error('Missing required fields in QR data');
+        } catch (e) {
+            console.warn('QR parsing error:', e);
+            return null;
+        }
+    }
+
+    function updateScannedPreview(parsedData) {
+        scannedQRData = parsedData;
+        scannerStatus.innerHTML = '<span class="text-green-600"><i class="fas fa-check-circle"></i> QR code scanned successfully!</span>';
+        scannedDataContent.innerHTML = `
+            <div class="grid grid-cols-2 gap-1 text-xs">
+                <span class="font-semibold text-gray-600">QR UUID:</span>
+                <span class="font-mono text-blue-700 break-all">${scannedQRData.qr_uuid}</span>
+                <span class="font-semibold text-gray-600">Item:</span>
+                <span>${scannedQRData.item}</span>
+                <span class="font-semibold text-gray-600">Part Name:</span>
+                <span>${scannedQRData.part.name}</span>
+                <span class="font-semibold text-gray-600">Part Maker:</span>
+                <span>${scannedQRData.part.maker || 'N/A'}</span>
+                <span class="font-semibold text-gray-600">Lot No:</span>
+                <span>${scannedQRData.lot_no}</span>
+            </div>`;
+        scannedDataPreview.classList.remove('hidden');
+        verifyScannedBtn.disabled = false;
+        setFooterMessage('QR scanned. Ready for verification.');
+    }
+
+    function canUseCameraOnThisOrigin() {
+        const host = window.location.hostname;
+        const localhostHosts = ['localhost', '127.0.0.1', '::1'];
+        return window.isSecureContext || localhostHosts.includes(host);
+    }
+
+    async function requestCameraPermissionOnce() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+            stream.getTracks().forEach(track => track.stop());
+        } catch (e) {
+            console.warn("Camera preflight permission request failed:", e);
+        }
+    }
+
+    async function pickBestRearCamera() {
+        try {
+            const devices = await Html5Qrcode.getCameras();
+            if (!Array.isArray(devices) || devices.length === 0) return { facingMode: "environment" };
+            const rearKeywords = /back|rear|environment|wide|ultra/i;
+            const rearCam = devices.find(d => rearKeywords.test(`${d.label || ""}`));
+            return rearCam?.id || devices[0].id || { facingMode: "environment" };
+        } catch (e) {
+            console.warn("Camera enumeration failed, falling back to environment mode.", e);
+            return { facingMode: "environment" };
+        }
+    }
+
+    async function startScanner() {
+        if (html5QrCode) {
+            try { await html5QrCode.stop(); } catch (e) { console.warn(e); }
+        }
+        const readerEl = document.getElementById("qr-reader");
+        while (readerEl.firstChild) readerEl.removeChild(readerEl.firstChild);
+        html5QrCode = new Html5Qrcode("qr-reader");
+        isProcessingScan = false;
+
+        const qrCodeSuccessCallback = async (decodedText) => {
+            if (!isScanning || isProcessingScan) return;
+            isProcessingScan = true;
+            const parsedData = parseQRData(decodedText);
+            if (parsedData) {
+                updateScannedPreview(parsedData);
+                try {
+                    await html5QrCode.pause(true);
+                    isScanning = false;
+                } catch (err) {
+                    console.warn('Failed to pause scanner', err);
+                }
+            } else {
+                scannerStatus.innerHTML = '<span class="text-red-500"><i class="fas fa-exclamation-triangle"></i> Invalid QR format. Please scan a valid verification QR code.</span>';
+                setTimeout(() => { if (isScanning) scannerStatus.innerHTML = ''; }, 4000);
+            }
+            isProcessingScan = false;
+        };
+        const qrBoxSize = Math.min(320, Math.max(200, Math.floor(window.innerWidth * 0.62)));
+        const config = {
+            fps: 22,
+            qrbox: { width: qrBoxSize, height: qrBoxSize },
+            aspectRatio: 1.0,
+            disableFlip: true,
+            formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+            rememberLastUsedCamera: true,
+            showTorchButtonIfSupported: true,
+            showZoomSliderIfSupported: true,
+            defaultZoomValueIfSupported: 1.0,
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+            videoConstraints: {
+                facingMode: "environment",
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 720, max: 1080 }
+            }
+        };
+        try {
+            if (!canUseCameraOnThisOrigin()) {
+                throw new Error("Camera is blocked on HTTP (192.168.x.x). Open via HTTPS, or use 'Scan From QR Image'.");
+            }
+            await requestCameraPermissionOnce();
+            const preferredCamera = await pickBestRearCamera();
+            await html5QrCode.start(preferredCamera, config, qrCodeSuccessCallback);
+            isScanning = true;
+            scannerStatus.innerHTML = '<span class="text-blue-600"><i class="fas fa-camera"></i> Camera active. Scan QR code...</span>';
+            setFooterMessage('Camera active - position QR code in frame');
+        } catch (err) {
+            console.error('Camera error:', err);
+            scannerStatus.innerHTML = '<span class="text-red-500">Unable to access camera. Please ensure camera permissions are granted.</span>';
+            setFooterMessage('Camera access failed', true);
+        }
+    }
+
+    async function stopScanner() {
+        if (html5QrCode) {
+            try { await html5QrCode.stop(); } catch (e) { console.warn(e); }
+            isScanning = false;
+            isProcessingScan = false;
+        }
+    }
+
+    async function switchToScannerScreen() {
+        if (!validateMasterSelection()) { setFooterMessage("Pick a master list row with item, part, and maker", true); return; }
+        const r = masterListRows[selectedMasterIdx];
+        currentUserInput = {
+            item_name: r.item.trim(),
+            part_name: r.part_name.trim(),
+            part_maker: (r.maker || "").trim(),
+            lot_no: lotNoInput.value.trim()
+        };
+        scannedQRData = null;
+        scannedDataPreview.classList.add('hidden');
+        verifyScannedBtn.disabled = true;
+        scannerStatus.innerHTML = '';
+        userInputScreen.classList.add('hidden');
+        scannerScreen.classList.remove('hidden');
+        resultScreen.classList.add('hidden');
+        viewTitle.innerText = 'Scan QR Code';
+        viewSubtitle.innerText = 'Use camera to scan the QR code';
+        setFooterMessage(`User: ${currentUserInput.item_name} | Ready to scan QR`);
+        await startScanner();
+    }
+
+    async function callCrossVerificationAPI() {
+        if (!scannedQRData) {
+            scannerStatus.innerHTML = '<span class="text-red-500">No QR code scanned.</span>';
+            return;
+        }
+        const requestPayload = {
+            user_input: {
+                item_name: currentUserInput.item_name,
+                part_name: currentUserInput.part_name,
+                part_maker: currentUserInput.part_maker,
+                lot_no: currentUserInput.lot_no
+            },
+            scanned_data: {
+                qr_uuid: scannedQRData.qr_uuid,
+                item: scannedQRData.item,
+                part: { name: scannedQRData.part.name, maker: scannedQRData.part.maker },
+                lot_no: scannedQRData.lot_no,
+                status: scannedQRData.status || null
+            }
+        };
+        const originalBtnText = verifyScannedBtn.innerHTML;
+        verifyScannedBtn.innerHTML = '<div class="spinner"></div> Verifying...';
+        verifyScannedBtn.disabled = true;
+        scannerStatus.innerHTML = '<span class="text-blue-600"><i class="fas fa-spinner fa-pulse"></i> Sending to backend...</span>';
+        try {
+            const response = await fetch(FULL_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(requestPayload)
+            });
+            const contentType = response.headers.get('content-type');
+            if (!response.ok) {
+                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                if (contentType && contentType.includes('application/json')) {
+                    const errorData = await response.json();
+                    errorMessage = errorData.message || errorData.detail || errorMessage;
+                } else {
+                    const textResponse = await response.text();
+                    errorMessage = `Server response: ${textResponse.substring(0, 300)}`;
+                    if (response.status === 404) { apiConfigBanner.classList.remove('hidden'); }
+                }
+                throw new Error(errorMessage);
+            }
+            if (!contentType || !contentType.includes('application/json')) {
+                const textResponse = await response.text();
+                throw new Error(`Expected JSON but got ${contentType}: ${textResponse.substring(0, 200)}`);
+            }
+            const result = await response.json();
+            await stopScanner();
+            await saveVerificationLogForUser(result);
+            displayVerificationResult(result);
+        } catch (error) {
+            console.error("Verification API error:", error);
+            scannerStatus.innerHTML = `<span class="text-red-500"><i class="fas fa-exclamation-triangle"></i> ${error.message}</span>`;
+            setFooterMessage(`API Error: ${error.message}`, true);
+            verifyScannedBtn.innerHTML = originalBtnText;
+            verifyScannedBtn.disabled = false;
+        }
+    }
+
+    function displayVerificationResult(apiResponse) {
+        const isVerified = apiResponse.verified === true;
+        const status = apiResponse.status;
+        const message = apiResponse.message || (isVerified ? "✅ Verification Successful!" : "❌ Verification Failed: Data mismatch detected.");
+        if (isVerified && status === "GOOD") {
+            resultIcon.innerHTML = '<i class="fas fa-check-circle text-5xl text-green-600"></i>';
+            resultIcon.className = "mx-auto w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-4";
+            resultTitle.className = "text-2xl font-extrabold text-green-700";
+            resultTitle.innerText = "✅ VERIFIED - GOOD";
+            resultMessage.innerHTML = `<span class="text-green-600 font-semibold">${message}</span>`;
+        } else {
+            resultIcon.innerHTML = '<i class="fas fa-times-circle text-5xl text-red-600"></i>';
+            resultIcon.className = "mx-auto w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4";
+            resultTitle.className = "text-2xl font-extrabold text-red-700";
+            resultTitle.innerText = "❌ NO GOOD";
+            resultMessage.innerHTML = `<span class="text-red-600 font-semibold">${message}</span>`;
+        }
+        let detailsHtml = `
+            <div class="mb-3 p-3 bg-white rounded border border-gray-200">
+                <p class="font-semibold text-gray-700 mb-2">📊 Comparison Results:</p>
+                <div class="space-y-2 text-xs">
+                    <div class="flex justify-between border-b pb-1"><span class="font-medium">Item:</span><span>User: "${currentUserInput.item_name}" | QR: "${scannedQRData?.item}"</span></div>
+                    <div class="flex justify-between border-b pb-1"><span class="font-medium">Part Name:</span><span>User: "${currentUserInput.part_name}" | QR: "${scannedQRData?.part.name}"</span></div>
+                    <div class="flex justify-between border-b pb-1"><span class="font-medium">Part Maker:</span><span>User: "${currentUserInput.part_maker}" | QR: "${scannedQRData?.part.maker || 'N/A'}"</span></div>
+                    <div class="flex justify-between border-b pb-1"><span class="font-medium">Lot <span class="font-normal text-gray-500">(reference)</span>:</span><span>User: "${currentUserInput.lot_no || "—"}" | QR: "${scannedQRData?.lot_no}"</span></div>
+                    ${isVerified && status === 'GOOD' && String(currentUserInput.lot_no || '').trim() !== String(scannedQRData?.lot_no || '').trim() ? '<p class="text-xs text-gray-500 mt-1">Lot may differ; pass/fail uses item, part, and maker only.</p>' : ''}
+                    <div class="flex justify-between"><span class="font-medium">QR UUID:</span><span class="font-mono text-xs break-all">${scannedQRData?.qr_uuid}</span></div>
+                </div>
+            </div>`;
+        if (apiResponse.details) detailsHtml += `<div class="mt-2"><p class="font-semibold text-gray-700 text-xs mb-1">🔍 API Details:</p><pre class="text-xs bg-gray-100 p-2 rounded overflow-x-auto">${JSON.stringify(apiResponse.details, null, 2)}</pre></div>`;
+        if (apiResponse.mismatches?.length > 0) {
+            detailsHtml += `<div class="mt-2"><p class="font-semibold text-red-600 text-xs mb-1">⚠️ Mismatches:</p><ul class="list-disc pl-4 text-xs text-red-600">`;
+            apiResponse.mismatches.forEach(m => { detailsHtml += `<li>${m}</li>`; });
+            detailsHtml += `</ul></div>`;
+        }
+        if (apiResponse.qr_data) detailsHtml += `<div class="mt-2"><p class="font-semibold text-gray-700 text-xs mb-1">📦 Database QR Record:</p><pre class="text-xs bg-gray-100 p-2 rounded overflow-x-auto">${JSON.stringify(apiResponse.qr_data, null, 2)}</pre></div>`;
+        resultDetails.innerHTML = detailsHtml;
+        userInputScreen.classList.add('hidden');
+        scannerScreen.classList.add('hidden');
+        resultScreen.classList.remove('hidden');
+        viewTitle.innerText = 'Verification Result';
+        viewSubtitle.innerText = 'Cross-Check Complete';
+        setFooterMessage(`Verification completed: ${status}`);
+    }
+
+    async function rescan() {
+        scannedQRData = null;
+        scannedDataPreview.classList.add('hidden');
+        verifyScannedBtn.disabled = true;
+        scannerStatus.innerHTML = '';
+        if (html5QrCode && !isScanning) {
+            try {
+                await html5QrCode.resume();
+                isScanning = true;
+                setFooterMessage('Camera resumed. Please scan QR code.');
+                return;
+            } catch (e) {
+                console.warn('Failed to resume scanner, restarting camera', e);
+            }
+        }
+        await startScanner();
+        setFooterMessage('Camera restarted. Please scan QR code.');
+    }
+
+    async function fullReset() {
+        await stopScanner();
+        lotNoInput.value = '';
+        if (outputMasterSearch) outputMasterSearch.value = '';
+        userInputError.innerText = '';
+        selectedMasterIdx = null;
+        currentUserInput = { item_name: '', part_name: '', part_maker: '', lot_no: '' };
+        scannedQRData = null;
+        scannedDataPreview.classList.add('hidden');
+        userInputScreen.classList.remove('hidden');
+        scannerScreen.classList.add('hidden');
+        resultScreen.classList.add('hidden');
+        viewTitle.innerText = 'QR Scanner Verification';
+        viewSubtitle.innerText = 'Scan QR Code & Cross-Verify with Database';
+        renderOutputMasterList();
+        setFooterMessage('Ready. Search the master list and tap a row to scan.');
+    }
+
+    async function backToUserInput() {
+        await stopScanner();
+        userInputScreen.classList.remove('hidden');
+        scannerScreen.classList.add('hidden');
+        resultScreen.classList.add('hidden');
+        viewTitle.innerText = 'QR Scanner Verification';
+        viewSubtitle.innerText = 'Search master list & tap a row to scan';
+        setFooterMessage('Back at master list — tap a row to scan again.');
+    }
+
+    // Event Bindings
+    outputMasterSearch?.addEventListener("input", () => loadOutputMasterList(1));
+    outputMasterRefreshBtn?.addEventListener("click", () => loadOutputMasterList(masterListMeta.page));
+    outputMasterPrevBtn?.addEventListener("click", () => {
+        if (masterListMeta.has_prev) loadOutputMasterList(masterListMeta.page - 1);
+    });
+    outputMasterNextBtn?.addEventListener("click", () => {
+        if (masterListMeta.has_next) loadOutputMasterList(masterListMeta.page + 1);
+    });
+    verifyScannedBtn.addEventListener('click', callCrossVerificationAPI);
+    rescanBtn.addEventListener('click', rescan);
+    scanImageBtn?.addEventListener('click', () => scanImageInput?.click());
+    scanImageInput?.addEventListener('change', async (event) => {
+        const file = event.target?.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        await stopScanner();
+        try {
+            const imageScanner = new Html5Qrcode("qr-reader");
+            const decodedText = await imageScanner.scanFile(file, true);
+            await imageScanner.clear();
+            const parsedData = parseQRData(decodedText);
+            if (!parsedData) throw new Error("Invalid QR format in selected image.");
+            updateScannedPreview(parsedData);
+            scannerStatus.innerHTML = '<span class="text-green-600"><i class="fas fa-image"></i> QR scanned from image successfully.</span>';
+        } catch (error) {
+            scannerStatus.innerHTML = `<span class="text-red-500"><i class="fas fa-exclamation-triangle"></i> ${error.message || 'Could not decode QR from image.'}</span>`;
+            setFooterMessage('Image QR scan failed', true);
+        }
+    });
+    backToUserFromScannerBtn.addEventListener('click', backToUserInput);
+    newVerificationBtn.addEventListener('click', fullReset);
+    forceLogoutBtn.addEventListener('click', confirmLogout);
+    if (closeApiBanner) closeApiBanner.addEventListener('click', () => apiConfigBanner.classList.add('hidden'));
+    
+    // Updated logout confirmation handler with redirect
+    if (confirmLogoutBtn) {
+        confirmLogoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            // Close modal first for smooth UX
+            const modal = document.getElementById('logoutModal');
+            if (modal) modal.close();
+            // Perform logout + redirect
+            performLogoutAndRedirect();
+        });
+    }
+
+    // Also handle global logout button if called via onclick already defined; but ensure redirect override
+    // Override the global confirmLogout to ensure the modal button uses new logic (already defined above)
+    // Ensure any other logout calls from result screen's forceLogoutBtn works properly.
+    // forceLogoutBtn already uses confirmLogout which triggers modal, so that's covered.
+    
+    // Initialize
+    currentEmployee = loadCurrentEmployee();
+    updateApiDisplay();
+    setFooterMessage(`API: ${FULL_API_URL} | Master list + tap row to scan.`);
+    loadOutputMasterList();
+</script>
+</body>
+</html>

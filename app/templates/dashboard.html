@@ -1,0 +1,2447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>QR Admin - Enhanced Scanner</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" /> 
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        .sidebar-transition { transition: width 0.3s ease, transform 0.3s ease; }
+        #qr-reader { width: 100%; border-radius: 1rem; overflow: hidden; position: relative; }
+        #qr-reader video { border-radius: 1rem; width: 100%; object-fit: cover; }
+        .scan-region-indicator { position: relative; }
+        .scan-region-indicator::after { content: ''; position: absolute; inset: 0; border: 2px solid rgba(0,255,255,0.4); border-radius: 1rem; pointer-events: none; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .result-animation { animation: slideIn 0.3s ease-out; }
+        .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        input:focus { box-shadow: 0 0 0 3px rgba(59,130,246,0.2); outline: none; }
+        .mismatch-highlight { background-color: #fee2e2; border-left: 3px solid #ef4444; padding: 4px 8px; border-radius: 6px; }
+        .match-highlight { background-color: #dcfce7; border-left: 3px solid #22c55e; padding: 4px 8px; border-radius: 6px; }
+        .api-config-banner { background: #fef3c7; border-left: 4px solid #f59e0b; }
+        .qr-preview { width: 244px; height: 244px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 2px solid #e2e8f0; background: white; padding: 12px; display: flex; align-items: center; justify-content: center; }
+        .qr-preview canvas, .qr-preview img { width: 100% !important; height: 100% !important; border-radius: 4px; }
+        .qr-code-container { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 16px; }
+        .qr-list-card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; transition: box-shadow 0.2s, transform 0.15s; }
+        .qr-list-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.1); transform: translateY(-2px); }
+        .qr-list-card--selected { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.35); border-color: #c4b5fd; }
+        .qr-list-card-open { cursor: pointer; }
+        .mini-qr { width: 80px; height: 80px; flex-shrink: 0; border-radius: 8px; overflow: hidden; background: white; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; }
+        .mini-qr canvas, .mini-qr img { width: 100% !important; height: 100% !important; }
+        .status-badge-good    { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .status-badge-nogood  { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        .status-badge-pending { background: #fef9c3; color: #854d0e; border: 1px solid #fef08a; }
+        .qr-detail-qr-box { width: 200px; height: 200px; background: white; border-radius: 12px; border: 2px solid #e2e8f0; padding: 10px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+        .qr-detail-qr-box canvas, .qr-detail-qr-box img { width: 100% !important; height: 100% !important; }
+        .skeleton-card { background: #f1f5f9; border-radius: 12px; height: 112px; animation: pulse 1.5s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @page {
+            size: 40mm 30mm;
+            margin: 0;
+        }
+        @media print {
+            html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 40mm !important;
+                height: 30mm !important;
+                max-height: 30mm !important;
+                overflow: hidden !important;
+                background: #fff !important;
+            }
+            body * { visibility: hidden !important; }
+            #printArea, #printArea * { visibility: visible !important; }
+            #printArea {
+                position: fixed !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 40mm !important;
+                max-width: 40mm !important;
+                max-height: 30mm !important;
+                overflow: hidden !important;
+                display: block !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                background: white !important;
+                page-break-after: avoid !important;
+                break-after: avoid !important;
+            }
+            #printArea .qr-print-label {
+                box-sizing: border-box;
+                width: 40mm;
+                height: 30mm;
+                margin: 0;
+                padding: 0.8mm;
+                font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+                text-align: center;
+                border: 0.5px solid #ccc;
+                border-radius: 2px;
+                background: #fff;
+                overflow: hidden;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            #printArea .qr-print-label h2 {
+                font-size: 4.5pt;
+                font-weight: 700;
+                margin: 0;
+                line-height: 1.1;
+                max-height: 1.15em;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            #printArea .qr-print-label .qr-print-sub {
+                color: #475569;
+                font-size: 3.5pt;
+                margin: 0;
+                line-height: 1.1;
+                max-height: 1.1em;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            #printArea .qr-print-label .qr-print-img {
+                display: block;
+                width: 11mm !important;
+                height: 11mm !important;
+                max-width: 11mm !important;
+                max-height: 11mm !important;
+                margin: 0 auto;
+                object-fit: contain;
+                border: 0.5px solid #e2e8f0;
+                border-radius: 1px;
+                padding: 0.5px;
+            }
+            #printArea .qr-print-label .qr-print-meta {
+                background: #f8fafc;
+                border-radius: 1px;
+                padding: 0.4mm 0.6mm;
+                font-size: 3pt;
+                text-align: left;
+                display: grid;
+                grid-template-columns: 7mm 1fr;
+                gap: 0.2mm 0.5mm;
+                line-height: 1.1;
+            }
+            #printArea .qr-print-label .qr-print-meta .lbl { color: #64748b; }
+            #printArea .qr-print-label .qr-print-meta .val { font-weight: 600; word-break: break-all; overflow: hidden; }
+            #printArea .qr-print-label .qr-print-meta .val.mono { font-family: ui-monospace, monospace; font-size: 2.5pt; font-weight: 500; }
+            .no-print { display: none !important; }
+        }
+        .toast-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .new-row {
+            animation: highlightRow 1s ease-out;
+        }
+        @keyframes highlightRow {
+            0% {
+                background-color: rgba(34, 197, 94, 0.3);
+            }
+            100% {
+                background-color: transparent;
+            }
+        }
+        .customer-link-item:hover, .item-link-item:hover, .material-link-item:hover, .worker-link-item:hover {
+            background: linear-gradient(95deg, rgba(59,130,246,0.08) 0%, rgba(59,130,246,0.02) 100%);
+            border-left: 3px solid #3b82f6;
+            padding-left: 13px !important;
+        }
+        .master-list-scroll { max-height: min(52vh, 420px); overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 0.75rem; }
+        .master-list-row { cursor: pointer; transition: background 0.15s; }
+        .master-list-row:hover { background: rgba(139, 92, 246, 0.06); }
+        .master-list-row-selected { background: rgba(139, 92, 246, 0.14) !important; box-shadow: inset 3px 0 0 0 #7c3aed; }
+        .verify-master-scroll { max-height: min(36vh, 280px); overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 0.75rem; }
+        .verification-status-dropdown .verification-status-trigger {
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            min-width: 11.5rem;
+            height: 2rem;
+            min-height: 2rem;
+            padding: 0 0.65rem 0 0.75rem;
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+            font-weight: 500;
+            color: oklch(var(--bc));
+            background: oklch(var(--b1));
+            border-radius: 0.375rem;
+            border: 1px solid rgb(0 0 0 / 0.82);
+            box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.22);
+            cursor: pointer;
+            user-select: none;
+            outline: none;
+        }
+        .verification-status-dropdown .verification-status-trigger:focus-visible {
+            box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.22), 0 0 0 3px rgba(59, 130, 246, 0.25);
+        }
+        .verification-status-menu {
+            border: 2px solid rgb(0 0 0 / 0.12);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+        }
+        .verification-status-menu .verification-status-pick {
+            border-radius: 0.375rem;
+            white-space: nowrap;
+        }
+        .debug-console-hint {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #0f0;
+            font-family: monospace;
+            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            z-index: 9999;
+            pointer-events: none;
+        }
+        .camera-quality-selector {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0,0,0,0.7);
+            padding: 8px;
+            border-radius: 8px;
+            color: white;
+            font-size: 12px;
+        }
+        @media (max-width: 768px) {
+            .debug-console-hint { display: none; }
+            #qrScannerModal .modal-box { max-width: 96vw; max-height: 94vh; }
+            #qrScannerModal .flex.gap-2.mt-4.justify-between.items-center { flex-direction: column; }
+            #qrScannerModal .flex.gap-2.mt-4.justify-between.items-center .btn { width: 100%; }
+            #qr-reader { min-height: 250px !important; }
+        }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+
+    <div id="printArea" style="display:none;"></div>
+    <div class="debug-console-hint">📡 Console open? Press F12 for QR debug logs</div>
+
+    <div class="navbar bg-base-100 shadow-sm px-4 sticky top-0 z-30">
+        <div class="flex-1">
+            <button id="menuBtn" class="btn btn-ghost btn-circle mr-2"><i class="fas fa-bars text-xl"></i></button>
+            <a class="btn btn-ghost text-xl">QR Admin System</a>
+        </div>
+        <div class="flex-none gap-2">
+            <span class="text-sm text-base-content/70 hidden sm:inline" id="userRoleBadge"></span>
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
+                    <div class="w-10 rounded-full bg-primary text-primary-content flex items-center justify-center">
+                        <span class="font-semibold" id="userInitial">AD</span>
+                    </div>
+                </div>
+                <ul tabindex="0" class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52">
+                    <li><a id="userProfileDisplay" class="text-sm">Profile</a></li>
+                    <li><a id="logoutBtn" class="text-sm text-error">Logout</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex relative">
+        <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden" onclick="closeSidebar()"></div>
+
+        <div id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 shadow-2xl z-50 sidebar-transition -translate-x-full lg:translate-x-0 lg:relative lg:top-auto lg:h-[calc(100vh-64px)] lg:z-40 flex flex-col">
+            <button onclick="closeSidebar()" class="btn btn-ghost btn-circle absolute right-2 top-2 lg:hidden"><i class="fas fa-times"></i></button>
+            <div class="p-6 border-b border-base-200 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-md">
+                        <i class="fas fa-qrcode text-primary-content text-xl"></i>
+                    </div>
+                    <div>
+                        <span class="text-lg font-bold text-base-content">QR Admin</span>
+                        <p class="text-xs text-base-content/50 mt-0.5">Verification System</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 flex-shrink-0">
+                <div class="mb-4">
+                    <p class="text-xs font-semibold text-base-content/50 uppercase tracking-wider px-4 mb-3">Main</p>
+                    <ul class="space-y-1">
+                        <li><a href="#" id="dashboardLink" class="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary text-primary-content font-medium"><i class="fas fa-users w-5"></i><span>Dashboard</span></a></li>
+                        <li><a href="#" id="inventoryLink" class="flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200"><i class="fas fa-boxes w-5"></i><span>Inventory</span></a></li>
+                    </ul>
+                </div>
+                <div class="mb-4">
+                    <p class="text-xs font-semibold text-base-content/50 uppercase tracking-wider px-4 mb-3">QR Operations</p>
+                    <ul class="space-y-1">
+                        <li><a href="#" id="generateQrLink" class="flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200"><i class="fas fa-qrcode w-5"></i><span>Generate QR</span></a></li>
+                        <li><a href="#" id="qrVerifyLink"   class="flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200"><i class="fas fa-camera w-5"></i><span>QR Verify</span></a></li>
+                        <li>
+                            <a href="#" id="qrListLink" class="flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200">
+                                <i class="fas fa-list-alt w-5"></i>
+                                <span>QR List</span>
+                                <span id="qrListBadge" class="ml-auto badge badge-primary badge-sm hidden">0</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="mb-4 mt-6 border-t border-base-200 pt-4">
+                    <p class="text-xs font-semibold text-base-content/50 uppercase tracking-wider px-4 mb-3">MANAGEMENT</p>
+                    <ul class="space-y-1">
+                        <li>
+                            <a href="/worker/create" id="createUserLink" class="worker-link-item flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200 transition-all duration-200">
+                                <i class="fas fa-user-plus w-5 text-indigo-500"></i>
+                                <span>Add User</span>
+                                <i class="fas fa-external-link-alt text-xs ml-auto opacity-50"></i>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/customer/create" id="customerLink" class="customer-link-item flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200 transition-all duration-200">
+                                <i class="fas fa-user-plus w-5 text-primary"></i>
+                                <span>Add Customer</span>
+                                <i class="fas fa-external-link-alt text-xs ml-auto opacity-50"></i>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/item/add" id="itemAddLink" class="item-link-item flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200 transition-all duration-200">
+                                <i class="fas fa-cube w-5 text-secondary"></i>
+                                <span>Add Item</span>
+                                <i class="fas fa-external-link-alt text-xs ml-auto opacity-50"></i>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/material/update" id="materialNameLink" class="material-link-item flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200 transition-all duration-200">
+                                <i class="fas fa-pallet w-5 text-accent"></i>
+                                <span>Add Material</span>
+                                <i class="fas fa-external-link-alt text-xs ml-auto opacity-50"></i>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="flex-1"></div>
+            <div class="p-4 border-t border-base-200 bg-base-100 flex-shrink-0">
+                <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+                    <div class="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-content font-semibold shadow-sm"><span id="sidebarUserInitial">AD</span></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-base-content truncate" id="sidebarUserName">Admin User</p>
+                        <p class="text-xs text-base-content/50 truncate" id="sidebarUserEmail">admin@example.com</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="mainContent" class="flex-1 p-6 md:p-8 w-full lg:w-auto">
+
+            <div id="dashboardView">
+                <div class="mb-8">
+                    <h1 class="text-3xl font-bold text-base-content">QR Code Verification System</h1>
+                    <p class="text-base-content/70 mt-1">Cross-verify user input against QR code data and update backend status</p>
+                </div>
+                <div id="apiConfigBanner" class="hidden api-config-banner mb-4 p-3 rounded-lg">
+                    <div class="flex items-start gap-2">
+                        <i class="fas fa-cog text-amber-600 mt-0.5"></i>
+                        <div class="flex-1">
+                            <p class="text-sm font-semibold text-amber-800">API Configuration</p>
+                            <p class="text-xs text-amber-700 mt-1">Current endpoint:</p>
+                            <code id="currentApiEndpoint" class="text-xs bg-amber-100 px-2 py-1 rounded break-all block font-mono mt-2"></code>
+                            <p class="text-xs text-amber-600 mt-2"><i class="fas fa-info-circle"></i> Make sure your backend server is running</p>
+                            <button id="closeApiBanner" class="mt-2 text-xs text-amber-700 hover:text-amber-900 underline"><i class="fas fa-times"></i> Dismiss</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <div class="card bg-base-100 shadow-xl"><div class="card-body p-6"><div class="flex items-center justify-between"><div><p class="text-base-content/70 text-sm font-medium">Total QR Codes</p><p class="text-3xl font-bold text-base-content mt-1" id="totalQrCount">0</p></div><div class="bg-primary/10 p-4 rounded-2xl"><i class="fas fa-qrcode text-2xl text-primary"></i></div></div></div></div>
+                    <div class="card bg-base-100 shadow-xl"><div class="card-body p-6"><div class="flex items-center justify-between"><div><p class="text-base-content/70 text-sm font-medium">Total Scans</p><p id="scanCountDisplay" class="text-3xl font-bold text-base-content mt-1">0</p></div><div class="bg-secondary/10 p-4 rounded-2xl"><i class="fas fa-camera text-2xl text-secondary"></i></div></div></div></div>
+                    <div class="card bg-base-100 shadow-xl"><div class="card-body p-6"><div class="flex items-center justify-between"><div><p class="text-base-content/70 text-sm font-medium">Good Scans</p><p id="verifiedCountDisplay" class="text-3xl font-bold text-base-content mt-1">0</p></div><div class="bg-success/10 p-4 rounded-2xl"><i class="fas fa-check-circle text-2xl text-success"></i></div></div></div></div>
+                    <div class="card bg-base-100 shadow-xl"><div class="card-body p-6"><div class="flex items-center justify-between"><div><p class="text-base-content/70 text-sm font-medium">No Good Scans</p><p id="nogoodCountDisplay" class="text-3xl font-bold text-base-content mt-1">0</p></div><div class="bg-error/10 p-4 rounded-2xl"><i class="fas fa-times-circle text-2xl text-error"></i></div></div></div></div>
+                </div>
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+                            <h2 class="text-xl font-semibold">Recent QR Verifications</h2>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <label class="text-xs text-base-content/60 flex items-center gap-1">
+                                    Day
+                                    <input type="date" id="exportLogsDate" class="input input-bordered input-sm h-8 min-h-8">
+                                </label>
+                                <button id="downloadLogsExcelBtn" class="btn btn-primary btn-sm gap-2 shrink-0">
+                                    <i class="fas fa-file-excel"></i> Download Day
+                                </button>
+                                <button id="refreshLogsBtn" class="btn btn-outline btn-sm gap-2 shrink-0">
+                                    <i class="fas fa-sync-alt"></i> Refresh Logs
+                                </button>
+                            </div>
+                        </div>
+                        <div class="rounded-xl border border-base-200 bg-base-200/40 p-3 mb-4">
+                            <p class="text-xs font-semibold text-base-content/50 uppercase tracking-wide mb-2">Filters</p>
+                            <div class="flex flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-end">
+                                <div class="flex-1 min-w-[200px] relative">
+                                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40 text-sm z-[1] pointer-events-none"></i>
+                                    <input type="text" id="verificationLogSearch" autocomplete="off" placeholder="Search timestamp, QR ID, part, maker, item, lot, verifier…" class="input input-bordered input-sm w-full pl-9 text-sm h-8 min-h-8">
+                                </div>
+                                <div class="flex flex-wrap items-end gap-2">
+                                    <input type="hidden" id="verificationFilterStatus" value="">
+                                    <div class="dropdown dropdown-bottom verification-status-dropdown w-full sm:w-auto">
+                                        <div tabindex="0" role="button" class="verification-status-trigger w-full sm:w-auto" id="verificationStatusTrigger" aria-haspopup="listbox" aria-expanded="false">
+                                            <span id="verificationStatusLabel">All Status</span>
+                                            <i class="fas fa-caret-down text-[11px] opacity-70 shrink-0" aria-hidden="true"></i>
+                                        </div>
+                                        <ul tabindex="0" class="dropdown-content menu verification-status-menu bg-base-100 rounded-lg z-[100] w-56 p-1.5 mt-1 shadow-lg">
+                                            <li class="p-0"><button type="button" class="verification-status-pick w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-200 border-0 bg-transparent cursor-pointer" data-value="">✓ All Status</button></li>
+                                            <li class="p-0"><button type="button" class="verification-status-pick w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-200 border-0 bg-transparent cursor-pointer" data-value="GOOD">✅ GOOD</button></li>
+                                            <li class="p-0"><button type="button" class="verification-status-pick w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-200 border-0 bg-transparent cursor-pointer" data-value="NO_GOOD">❌ NO GOOD</button></li>
+                                            <li class="p-0"><button type="button" class="verification-status-pick w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-200 border-0 bg-transparent cursor-pointer" data-value="PENDING">⏳ PENDING</button></li>
+                                        </ul>
+                                    </div>
+                                    <label class="flex flex-col gap-0.5 text-xs text-base-content/60">
+                                        <span>From</span>
+                                        <input type="date" id="verificationFilterDateFrom" class="input input-bordered input-sm w-full sm:w-40 text-sm h-8 min-h-8">
+                                    </label>
+                                    <label class="flex flex-col gap-0.5 text-xs text-base-content/60">
+                                        <span>To</span>
+                                        <input type="date" id="verificationFilterDateTo" class="input input-bordered input-sm w-full sm:w-40 text-sm h-8 min-h-8">
+                                    </label>
+                                    <button type="button" id="verificationClearFiltersBtn" class="btn btn-ghost btn-sm h-8 min-h-8">Clear filters</button>
+                                </div>
+                            </div>
+                            <p id="verificationFilterCount" class="text-xs text-base-content/60 mt-2 hidden"></p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="table table-zebra w-full">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>QR ID</th>
+                                        <th>Part Name</th>
+                                        <th>Part Maker</th>
+                                        <th>Item Name</th>
+                                        <th>Status</th>
+                                        <th>Result</th>
+                                        <th>Verified By</th>
+                                        <th class="no-print w-16 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="verificationHistoryTable">
+                                    <tr>
+                                        <td colspan="9" class="text-center py-8 text-base-content/50">
+                                            <i class="fas fa-qrcode text-4xl mb-2 opacity-30 block"></i>
+                                            <p>No verifications yet. Scan a QR code to get started.</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="generateQrView" class="hidden">
+                <div class="mb-8">
+                    <h1 class="text-3xl font-bold text-base-content">Generate QR Code</h1>
+                    <p class="text-base-content/70 mt-1">Choose a row from the master list (managed via <strong>Add Item</strong>), enter a lot number, then generate. Duplicate QR combinations are rejected.</p>
+                </div>
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body">
+                        <form id="generateQrForm" class="space-y-4">
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <h2 class="text-lg font-semibold text-base-content flex items-center gap-2"><i class="fas fa-list-ul text-primary"></i> Master list of items</h2>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" id="deleteSelectedMasterBtn" class="btn btn-error btn-sm gap-2" disabled><i class="fas fa-trash"></i> Delete selected</button>
+                                    <button type="button" id="refreshMasterListBtn" class="btn btn-outline btn-sm gap-2"><i class="fas fa-sync-alt"></i> Refresh list</button>
+                                </div>
+                            </div>
+                            <div class="relative">
+                                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40 text-sm"></i>
+                                <input type="text" id="masterListSearch" autocomplete="off" placeholder="Filter by customer, item, part, or maker…" class="input input-bordered w-full pl-9 text-sm">
+                            </div>
+                            <div id="masterListLoading" class="hidden py-10 text-center text-base-content/50"><span class="loading loading-spinner loading-primary mx-auto mb-2 block"></span> Loading master list…</div>
+                            <div id="masterListError" class="hidden alert alert-warning text-sm"><i class="fas fa-exclamation-triangle"></i><span id="masterListErrorMsg">Could not load master list.</span></div>
+                            <div id="masterListEmpty" class="hidden alert alert-info text-sm"><i class="fas fa-info-circle"></i><span>No items in the master list. Use <a href="/item/add" class="link link-primary font-semibold">Add Item</a> to register customers, items, and parts first.</span></div>
+                            <div id="masterListTableWrap" class="hidden master-list-scroll">
+                                <table class="table table-sm w-full">
+                                    <thead class="sticky top-0 z-[1] bg-base-200/95 backdrop-blur">
+                                        <tr>
+                                            <th class="w-10 text-center">
+                                                <input type="checkbox" id="masterSelectAllChk" class="checkbox checkbox-xs" aria-label="Select all rows">
+                                            </th>
+                                            <th class="text-xs">Customer</th>
+                                            <th class="text-xs">Item</th>
+                                            <th class="text-xs">Part</th>
+                                            <th class="text-xs">Maker</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="masterListBody"></tbody>
+                                </table>
+                            </div>
+                            <div id="masterListNoMatch" class="hidden text-sm text-base-content/50 py-4 text-center">No rows match your filter.</div>
+                            <div id="masterListPager" class="hidden mt-3 flex items-center justify-between gap-2 text-xs">
+                                <span id="masterListPageInfo" class="text-base-content/60">Page 1</span>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" id="masterListPrevBtn" class="btn btn-ghost btn-xs">Prev</button>
+                                    <button type="button" id="masterListNextBtn" class="btn btn-ghost btn-xs">Next</button>
+                                </div>
+                            </div>
+                            <div id="selectedMasterSummary" class="hidden rounded-xl border border-primary/30 bg-primary/5 p-4">
+                                <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide mb-2">Selected from master list</p>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                                    <span class="text-base-content/60">Customer</span><span id="sumCustomer" class="font-medium"></span>
+                                    <span class="text-base-content/60">Item</span><span id="sumItem" class="font-medium"></span>
+                                    <span class="text-base-content/60">Part</span><span id="sumPart" class="font-medium"></span>
+                                    <span class="text-base-content/60">Maker</span><span id="sumMaker" class="font-medium"></span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="label-text font-medium text-sm block mb-1">Lot Number <span class="text-error">*</span></label>
+                                <input type="text" id="genLotNo" placeholder="e.g., LOT-2024-001" class="input input-bordered w-full max-w-md" required>
+                                <p class="text-xs text-base-content/50 mt-1">Lot numbers are not stored on the master list; enter the batch or lot for this QR.</p>
+                            </div>
+                            <div id="genQrError" class="text-error text-sm min-h-[24px]"></div>
+                            <div id="genQrSuccess" class="text-success text-sm min-h-[24px] hidden"></div>
+                            <div id="genQrResult" class="hidden mt-4"></div>
+                            <button type="submit" id="submitGenerateBtn" class="btn btn-primary w-full md:w-auto"><i class="fas fa-qrcode mr-2"></i> Generate QR Code</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div id="qrListView" class="hidden">
+                <div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h1 class="text-3xl font-bold text-base-content">QR Code List</h1>
+                        <p class="text-base-content/70 mt-1">All recorded QR codes from the database</p>
+                    </div>
+                    <div class="flex gap-2 flex-wrap items-center">
+                        <button id="refreshQrListBtn" class="btn btn-outline btn-sm gap-2"><i class="fas fa-sync-alt"></i> Refresh</button>
+                        <button type="button" id="printSelectedQrBtn" class="btn btn-primary btn-sm gap-2" disabled><i class="fas fa-print"></i> Print selected</button>
+                        <button type="button" id="selectAllFilteredQrBtn" class="btn btn-outline btn-sm gap-2"><i class="fas fa-check-double"></i> Select all in list</button>
+                        <button type="button" id="clearQrSelectionBtn" class="btn btn-ghost btn-sm gap-2"><i class="fas fa-times"></i> Clear selection</button>
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-sm mb-6">
+                    <div class="card-body p-4">
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <div class="flex-1 relative">
+                                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40 text-sm"></i>
+                                <input type="text" id="qrListSearch" placeholder="Search item, part, maker, lot, UUID…" class="input input-bordered w-full pl-9 text-sm">
+                            </div>
+                            <select id="qrListStatusFilter" class="select select-bordered text-sm w-full sm:w-44">
+                                <option value="">All Statuses</option>
+                                <option value="GOOD">✅ GOOD</option>
+                                <option value="NO_GOOD">❌ NO GOOD</option>
+                                <option value="PENDING">⏳ PENDING</option>
+                            </select>
+                            <select id="qrListSortBy" class="select select-bordered text-sm w-full sm:w-44">
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                                <option value="item">Item A–Z</option>
+                                <option value="status">By Status</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <div class="badge badge-lg badge-ghost gap-1"><i class="fas fa-database text-xs"></i> Total: <span id="statTotal" class="font-bold ml-1">0</span></div>
+                    <div class="badge badge-lg badge-success gap-1">✅ Good: <span id="statGood" class="font-bold ml-1">0</span></div>
+                    <div class="badge badge-lg badge-error gap-1">❌ No Good: <span id="statNoGood" class="font-bold ml-1">0</span></div>
+                    <div class="badge badge-lg badge-warning gap-1">⏳ Pending: <span id="statPending" class="font-bold ml-1">0</span></div>
+                </div>
+
+                <div id="qrListLoading" class="hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div class="skeleton-card"></div><div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div><div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div><div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div><div class="skeleton-card"></div>
+                </div>
+
+                <div id="qrListError" class="hidden mb-4">
+                    <div class="alert alert-error shadow-lg">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <div><h3 class="font-bold">Failed to load QR codes</h3><p class="text-sm" id="qrListErrorMsg">Could not connect to backend.</p></div>
+                        <button id="retryQrListBtn" class="btn btn-sm btn-ghost ml-auto">Retry</button>
+                    </div>
+                </div>
+
+                <div id="qrListGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+
+                <div id="qrListEmpty" class="hidden text-center py-20">
+                    <i class="fas fa-inbox text-6xl text-base-content/20 mb-4 block"></i>
+                    <p class="text-xl font-semibold text-base-content/50">No QR codes found</p>
+                    <p class="text-base-content/40 text-sm mt-1">Try adjusting your search or filters</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast toast-end z-[100]"></div>
+
+    <dialog id="userInputModal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box rounded-2xl max-w-5xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6">
+            <div class="flex flex-col lg:flex-row gap-5 lg:gap-6">
+                <div class="flex-1 min-w-0 lg:max-w-[52%]">
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <h4 class="font-semibold text-sm sm:text-base flex items-center gap-2 leading-tight"><i class="fas fa-list-ul text-secondary"></i> Master list (items &amp; parts)</h4>
+                        <button type="button" id="verifyMasterRefreshBtn" class="btn btn-ghost btn-xs shrink-0 gap-1"><i class="fas fa-sync-alt"></i> Refresh</button>
+                    </div>
+                    <p class="text-xs text-base-content/60 mb-2">Managed in <a href="/item/add" class="link link-primary link-hover">Add Item</a> and <a href="/material/update" class="link link-primary link-hover">Add Material</a>. Click a row to fill the form.</p>
+                    <div class="relative mb-2">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40 text-xs"></i>
+                        <input type="text" id="verifyMasterSearch" autocomplete="off" placeholder="Filter by customer, item, part, maker…" class="input input-bordered input-sm w-full pl-8 text-sm">
+                    </div>
+                    <div id="verifyMasterLoading" class="hidden py-6 text-center text-sm text-base-content/50"><span class="loading loading-spinner loading-primary mx-auto mb-2 block"></span> Loading master list…</div>
+                    <div id="verifyMasterError" class="hidden alert alert-warning py-2 text-xs mb-2"><i class="fas fa-exclamation-triangle"></i><span id="verifyMasterErrorMsg"></span></div>
+                    <div id="verifyMasterEmpty" class="hidden alert alert-info py-2 text-xs mb-2"><i class="fas fa-info-circle"></i><span>No rows yet. Register items and parts first.</span></div>
+                    <div id="verifyMasterTableWrap" class="hidden verify-master-scroll">
+                        <table class="table table-sm w-full">
+                            <thead class="sticky top-0 z-[1] bg-base-200/95 backdrop-blur">
+                                <tr>
+                                    <th class="text-xs">Customer</th>
+                                    <th class="text-xs">Item</th>
+                                    <th class="text-xs">Part</th>
+                                    <th class="text-xs">Maker</th>
+                                </tr>
+                            </thead>
+                            <tbody id="verifyMasterBody"></tbody>
+                        </table>
+                    </div>
+                    <p id="verifyMasterNoMatch" class="hidden text-xs text-center text-base-content/50 py-2">No rows match your filter.</p>
+                    <div id="verifyMasterPager" class="hidden mt-2 flex items-center justify-between gap-2 text-xs">
+                        <span id="verifyMasterPageInfo" class="text-base-content/60">Page 1</span>
+                        <div class="flex items-center gap-2">
+                            <button type="button" id="verifyMasterPrevBtn" class="btn btn-ghost btn-xs">Prev</button>
+                            <button type="button" id="verifyMasterNextBtn" class="btn btn-ghost btn-xs">Next</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0 lg:border-l lg:border-base-300 lg:pl-6">
+                    <h3 class="text-lg sm:text-xl font-bold flex items-center gap-2 mb-2"><i class="fas fa-pen-alt text-primary"></i><span>Verification details</span></h3>
+                    <p class="text-sm text-base-content/70 mb-4">Use the list beside this form or type manually. Item, part, and maker must match the scanned QR; lot number may differ and is optional.</p>
+                    <div class="space-y-3">
+                        <div><label class="label-text font-medium text-sm block mb-1">Item Name <span class="text-error">*</span></label><input type="text" id="modalItemName" placeholder="e.g., Laptop, Smartphone" class="input input-bordered w-full"></div>
+                        <div><label class="label-text font-medium text-sm block mb-1">Part Name <span class="text-error">*</span></label><input type="text" id="modalPartName" placeholder="e.g., CPU, GPU" class="input input-bordered w-full"></div>
+                        <div><label class="label-text font-medium text-sm block mb-1">Part Maker <span class="text-error">*</span></label><input type="text" id="modalPartMaker" placeholder="e.g., Intel, AMD" class="input input-bordered w-full"></div>
+                        <div><label class="label-text font-medium text-sm block mb-1">Lot Number <span class="text-base-content/50 font-normal">(optional)</span></label><input type="text" id="modalLotNo" placeholder="e.g., LOT-2024-001 — not required to match QR" class="input input-bordered w-full"></div>
+                        <div id="modalInputError" class="text-error text-sm min-h-[24px]"></div>
+                    </div>
+                    <div class="modal-action mt-4 px-0 flex-wrap gap-2 justify-end"><button type="button" id="cancelUserInputBtn" class="btn btn-ghost">Cancel</button><button type="button" id="confirmUserInputBtn" class="btn btn-primary"><i class="fas fa-camera mr-1"></i> Proceed to Scan QR</button></div>
+                </div>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="qrScannerModal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box p-0 overflow-hidden max-w-lg w-full rounded-2xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b border-base-200 bg-base-100 sticky top-0 z-10">
+                <h3 class="text-xl font-bold flex items-center gap-2"><i class="fas fa-camera text-primary text-xl"></i><span>QR Code Scanner</span></h3>
+                <button onclick="closeQRModal()" class="btn btn-sm btn-circle btn-ghost">✕</button>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                <div class="p-4 bg-base-200">
+                    <div id="userInputSummary" class="bg-base-100 p-3 rounded-lg mb-4 text-xs border border-base-300">
+                        <p class="font-semibold mb-1"><i class="fas fa-info-circle"></i> Verifying against (User Input):</p>
+                        <div id="summaryDetails" class="grid grid-cols-2 gap-x-2 gap-y-1 text-base-content/80"></div>
+                    </div>
+                    <div id="qr-reader" class="scan-region-indicator w-full bg-black rounded-xl overflow-hidden shadow-inner" style="min-height:300px;"></div>
+                    <div id="scan-status" class="mt-3 text-sm text-center text-base-content/70 hidden">
+                        <div class="loading-spinner mr-2"></div>
+                        <span>Cross-verifying and updating backend...</span>
+                    </div>
+                    <div id="verification-result" class="mt-4 hidden result-animation"></div>
+                    <div class="flex gap-2 mt-4 justify-between items-center">
+                        <button id="restartScannerBtn" class="btn btn-outline btn-sm"><i class="fas fa-sync-alt mr-1"></i>Restart Camera</button>
+                        <button id="stopScannerBtn" class="btn btn-error btn-sm btn-outline"><i class="fas fa-stop mr-1"></i>Stop Camera</button>
+                    </div>
+                    <div class="mt-2">
+                        <button id="scanImageFallbackBtn" class="btn btn-sm w-full"><i class="fas fa-image mr-1"></i>Scan From QR Image</button>
+                        <input id="scanImageFallbackInput" type="file" accept="image/*" class="hidden">
+                    </div>
+                    <div class="mt-3 p-2 bg-info/10 rounded-lg text-xs">
+                        <p class="font-semibold">💡 Tips for better scanning:</p>
+                        <ul class="list-disc list-inside mt-1 space-y-1">
+                            <li>Ensure good lighting on the QR code</li>
+                            <li>Hold the camera steady and at the right distance</li>
+                            <li>Make sure the entire QR code is in frame</li>
+                            <li>Clean the camera lens if needed</li>
+                            <li>Try zooming in/out using pinch gestures</li>
+                        </ul>
+                    </div>
+                    <p class="text-xs text-center text-base-content/60 mt-3">📷 Position QR code in front of camera. Verification happens automatically.</p>
+                </div>
+            </div>
+            <div class="modal-action p-4 border-t border-base-200 bg-base-100 sticky bottom-0">
+                <button onclick="closeQRModal()" class="btn btn-block">Close</button>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="qrDetailModal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box rounded-2xl max-w-lg w-full p-0 overflow-hidden">
+            <div class="flex items-center justify-between p-5 border-b border-base-200">
+                <h3 class="text-xl font-bold flex items-center gap-2"><i class="fas fa-qrcode text-primary"></i> QR Code Details</h3>
+                <button onclick="document.getElementById('qrDetailModal').close()" class="btn btn-sm btn-circle btn-ghost">✕</button>
+            </div>
+            <div class="p-6">
+                <div class="flex flex-col items-center gap-3 mb-6">
+                    <div id="detailQrCanvas" class="qr-detail-qr-box"></div>
+                    <div id="detailStatusBadge"></div>
+                </div>
+                <div class="bg-base-100 rounded-xl p-4 border border-base-200 mb-5">
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <span class="text-base-content/60 font-medium">Item</span>       <span id="detailItem"      class="font-semibold"></span>
+                        <span class="text-base-content/60 font-medium">Part</span>       <span id="detailPart"      class="font-semibold"></span>
+                        <span class="text-base-content/60 font-medium">Maker</span>      <span id="detailMaker"     class="font-semibold"></span>
+                        <span class="text-base-content/60 font-medium">Lot No</span>     <span id="detailLotNo"     class="font-semibold"></span>
+                        <span class="text-base-content/60 font-medium">UUID</span>       <span id="detailUuid"      class="font-mono text-xs break-all"></span>
+                        <span class="text-base-content/60 font-medium">Created</span>    <span id="detailCreatedAt" class="text-xs"></span>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2 justify-center no-print">
+                    <button id="detailDownloadBtn" class="btn btn-primary btn-sm gap-2"><i class="fas fa-download"></i> Download PNG</button>
+                    <button id="detailPrintBtn"    class="btn btn-outline btn-sm gap-2"><i class="fas fa-print"></i> Print</button>
+                    <button id="detailCopyDataBtn" class="btn btn-ghost btn-sm gap-2"><i class="fas fa-copy"></i> Copy QR Data</button>
+                </div>
+            </div>
+        </div>
+    </dialog>
+
+    <script>
+    function checkAdminAuth() {
+        const s = sessionStorage.getItem("employee");
+        if (!s) { window.location.href = "/login"; return false; }
+        try {
+            const u = JSON.parse(s);
+            if (!u.role || u.role.toLowerCase() !== 'admin') { sessionStorage.removeItem("employee"); window.location.href = "/login"; return false; }
+            return u;
+        } catch(e) { sessionStorage.removeItem("employee"); window.location.href = "/login"; return false; }
+    }
+    const currentUser = checkAdminAuth();
+    if (!currentUser) throw new Error("Unauthorized");
+
+    (function updateUIForUser() {
+        const n = currentUser.employee_id || currentUser.name || "Admin";
+        const i = n.substring(0,2).toUpperCase();
+        document.getElementById("userInitial").innerText       = i;
+        document.getElementById("sidebarUserInitial").innerText = i;
+        document.getElementById("sidebarUserName").innerText   = n;
+        document.getElementById("sidebarUserEmail").innerText  = `${currentUser.role||"admin"}@company.com`;
+        document.getElementById("userRoleBadge").innerHTML     = `<i class="fas fa-shield-alt mr-1"></i>${(currentUser.role||"admin").toUpperCase()}`;
+    })();
+
+    document.getElementById("logoutBtn")?.addEventListener("click", (e) => { e.preventDefault(); sessionStorage.removeItem("employee"); window.location.href = "/login"; });
+
+    // Use the current origin (where the frontend is served from)
+const API_BASE_URL = window.location.origin;
+
+// Or if your Django backend is on a different port in Codespaces
+// const API_BASE_URL = 'https://special-guacamole-4jv9w46gwxp9cj6r9-8000.app.github.dev';
+
+    const FULL_API_URL           = `${API_BASE_URL}/api/verify/cross-check`;
+    const UPDATE_STATUS_URL      = `${API_BASE_URL}/api/verify/update-status`;
+    const GENERATE_API_URL       = `${API_BASE_URL}/api/qr/generate`;
+    const MASTER_ROWS_URL        = `${API_BASE_URL}/api/qr/selection/rows`;
+    const MASTER_DELETE_URL      = `${API_BASE_URL}/api/qr/selection/rows/delete`;
+    const LIST_QR_URL            = `${API_BASE_URL}/api/qr/list`;
+    const VERIFICATION_LOGS_URL  = `${API_BASE_URL}/api/verification/logs`;
+    const VERIFICATION_LOGS_EXPORT_URL = `${API_BASE_URL}/api/verification/logs/export`;
+
+    let html5QrCode = null, isScanning = false, isProcessing = false;
+    let scanCount = 0, verifiedCount = 0, nogoodCount = 0;
+    let pendingUserInput = { item_name:'', part_name:'', part_maker:'', lot_no:'' };
+    let allQrRecords = [];
+    let selectedQrUuids = new Set();
+    let masterListRows = [];
+    let selectedMasterDeleteRows = new Set();
+    let masterListMeta = { page: 1, page_size: 100, total_rows: 0, total_pages: 0, has_prev: false, has_next: false };
+    let selectedMasterIndex = null;
+    let verifyMasterRows = [];
+    let verifyMasterMeta = { page: 1, page_size: 100, total_rows: 0, total_pages: 0, has_prev: false, has_next: false };
+    let verifySelectedIdx = null;
+    let activeDetailRecord = null;
+    let allVerificationLogs = [];
+
+    // Debug console styling
+    const DEBUG_STYLES = {
+        SCAN: 'color: #10b981; font-weight: bold;',
+        PARSE: 'color: #f59e0b; font-weight: bold;',
+        ERROR: 'color: #ef4444; font-weight: bold;',
+        INFO: 'color: #3b82f6; font-weight: bold;',
+        DATA: 'color: #8b5cf6; font-weight: bold;',
+        SUCCESS: 'color: #22c55e; font-weight: bold;',
+        WARNING: 'color: #f97316; font-weight: bold;'
+    };
+
+    function debugLog(category, message, data = null) {
+        const style = DEBUG_STYLES[category] || DEBUG_STYLES.INFO;
+        console.log(`%c[${category}] ${message}`, style);
+        if (data !== null) {
+            console.log('  └─ Data:', data);
+            if (typeof data === 'object' && data !== null && !(data instanceof Error)) {
+                try {
+                    console.table(data);
+                } catch(e) {}
+            }
+        }
+    }
+
+    function canUseCameraOnThisOrigin() {
+        const host = window.location.hostname;
+        const localhostHosts = ['localhost', '127.0.0.1', '::1'];
+        return window.isSecureContext || localhostHosts.includes(host);
+    }
+
+    async function requestCameraPermissionOnce() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+            stream.getTracks().forEach(track => track.stop());
+        } catch (e) {
+            debugLog('WARNING', 'Camera preflight permission request failed', e);
+        }
+    }
+
+    async function pickBestRearCamera() {
+        try {
+            const devices = await Html5Qrcode.getCameras();
+            if (!Array.isArray(devices) || devices.length === 0) return { facingMode: "environment" };
+            const rearKeywords = /back|rear|environment|wide|ultra/i;
+            const rearCam = devices.find((d) => rearKeywords.test(`${d.label || ""}`));
+            return rearCam?.id || devices[0].id || { facingMode: "environment" };
+        } catch (e) {
+            debugLog('WARNING', 'Failed to enumerate cameras, using environment mode', e);
+            return { facingMode: "environment" };
+        }
+    }
+
+    // ================================================================
+    // ENHANCED parseQRData - handles partial scans and various formats
+    // ================================================================
+    
+    function parseQRData(scannedText) {
+        debugLog('PARSE', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        debugLog('PARSE', 'Raw QR text received');
+        debugLog('PARSE', `Text: "${scannedText}"`);
+        debugLog('PARSE', `Length: ${scannedText.length} characters`);
+        
+        // Clean the text - remove any BOM characters, trim whitespace
+        let cleanText = scannedText;
+        if (typeof cleanText === 'string') {
+            // Remove UTF-8 BOM if present
+            if (cleanText.charCodeAt(0) === 0xFEFF) {
+                cleanText = cleanText.slice(1);
+                debugLog('PARSE', 'Removed BOM character');
+            }
+            cleanText = cleanText.trim();
+            debugLog('PARSE', `Cleaned text length: ${cleanText.length}`);
+        }
+        
+        // Check if this is a numeric-only scan (partial read)
+        if (/^\d+$/.test(cleanText) && cleanText.length < 15) {
+            debugLog('ERROR', '❌ Scanned a numeric value instead of JSON QR code');
+            debugLog('ERROR', `This appears to be a partial read: "${cleanText}"`);
+            debugLog('ERROR', 'The QR code contains JSON data but the scanner only read part of it');
+            debugLog('ERROR', 'Possible causes:');
+            debugLog('ERROR', '  1. QR code is too small or low resolution');
+            debugLog('ERROR', '  2. Camera is too far or too close');
+            debugLog('ERROR', '  3. Poor lighting conditions');
+            debugLog('ERROR', '  4. QR code is damaged or has low contrast');
+            debugLog('ERROR', '  5. Camera needs cleaning');
+            return null;
+        }
+        
+        // Check if it starts with { (JSON object)
+        if (!cleanText.startsWith('{')) {
+            debugLog('WARNING', 'Text does not start with { - not a complete JSON object');
+            debugLog('WARNING', `First few characters: ${cleanText.substring(0, 20)}`);
+            
+            // Try to find JSON within the text (in case there's garbage before/after)
+            const jsonMatch = cleanText.match(/\{.*\}/s);
+            if (jsonMatch) {
+                debugLog('PARSE', 'Found JSON-like structure within text:', jsonMatch[0]);
+                cleanText = jsonMatch[0];
+            } else {
+                debugLog('ERROR', 'No JSON structure found in scanned text');
+                debugLog('ERROR', 'The scanner may be reading the QR code incorrectly');
+                debugLog('ERROR', 'Try: adjusting distance, lighting, or cleaning the camera');
+                return null;
+            }
+        }
+        
+        // Try to parse JSON
+        let parsedData = null;
+        try {
+            parsedData = JSON.parse(cleanText);
+            debugLog('SUCCESS', '✓ JSON parsed successfully', parsedData);
+        } catch(e) {
+            debugLog('ERROR', `JSON parse failed: ${e.message}`);
+            debugLog('ERROR', 'Raw text that failed:', cleanText);
+            
+            // Try to fix common issues
+            try {
+                // Attempt to fix single quotes vs double quotes
+                let fixedText = cleanText.replace(/'/g, '"');
+                // Fix unquoted keys
+                fixedText = fixedText.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+                parsedData = JSON.parse(fixedText);
+                debugLog('SUCCESS', 'Fixed JSON formatting and parsed', parsedData);
+            } catch(e2) {
+                debugLog('ERROR', 'Could not fix JSON format');
+                return null;
+            }
+        }
+        
+        // Extract fields with fallbacks for your exact format
+        const qr_uuid = parsedData.qr_uuid || parsedData.uuid;
+        const item = parsedData.item || parsedData.item_name;
+        
+        let partName = '', partMaker = '';
+        
+        // Handle the nested part object format: {"name": "sample", "maker": "sample"}
+        if (parsedData.part) {
+            partName = parsedData.part.name || parsedData.part.part_name || '';
+            partMaker = parsedData.part.maker || parsedData.part.part_maker || '';
+            debugLog('PARSE', 'Extracted from part object - Name: ' + partName + ', Maker: ' + partMaker);
+        } else {
+            // Handle flat structure
+            partName = parsedData.part_name || '';
+            partMaker = parsedData.part_maker || '';
+            debugLog('PARSE', 'Extracted from flat structure - Name: ' + partName + ', Maker: ' + partMaker);
+        }
+        
+        const lot_no = parsedData.lot_no || parsedData.lotNumber || '';
+        
+        // Log extracted values
+        debugLog('DATA', 'Extracted QR fields:', {
+            qr_uuid: qr_uuid || '(missing)',
+            item: item || '(missing)',
+            partName: partName || '(missing)',
+            partMaker: partMaker || '(missing)',
+            lot_no: lot_no || '(missing)'
+        });
+        
+        // Validate required fields
+        const missingFields = [];
+        if (!qr_uuid) missingFields.push('qr_uuid/uuid');
+        if (!item) missingFields.push('item/item_name');
+        if (!partName) missingFields.push('part.name/part_name');
+        if (!lot_no) missingFields.push('lot_no');
+        
+        if (missingFields.length > 0) {
+            debugLog('ERROR', `Missing required fields: ${missingFields.join(', ')}`);
+            debugLog('ERROR', 'Full parsed object:', parsedData);
+            return null;
+        }
+        
+        debugLog('SUCCESS', '✓ QR data is valid and complete');
+        const result = { 
+            qr_uuid: String(qr_uuid), 
+            item: String(item), 
+            part: { name: String(partName), maker: String(partMaker) }, 
+            lot_no: String(lot_no) 
+        };
+        debugLog('DATA', 'Normalized QR data for verification:', result);
+        debugLog('PARSE', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        return result;
+    }
+
+    // ================================================================
+    // ENHANCED startQrScanner with better settings for text-heavy QR codes
+    // ================================================================
+    
+    async function startQrScanner() {
+        debugLog('INFO', '========================================');
+        debugLog('INFO', 'Starting QR scanner with enhanced settings...');
+        
+        // Clean up any existing scanner
+        if (html5QrCode && isScanning) {
+            try { await html5QrCode.stop(); } catch (e) {}
+            isScanning = false;
+        }
+
+        document.getElementById("verification-result").classList.add("hidden");
+        document.getElementById("scan-status").classList.add("hidden");
+        isProcessing = false;
+
+        const el = document.getElementById("qr-reader");
+        while (el.firstChild) el.removeChild(el.firstChild);
+
+        // Use html5QrCode with optimized settings for JSON QR codes
+        html5QrCode = new Html5Qrcode("qr-reader");
+
+        // Enhanced configuration for better QR reading of text-heavy codes
+        const qrBoxSize = Math.min(320, Math.max(200, Math.floor(window.innerWidth * 0.6)));
+        const config = {
+            fps: 22,
+            qrbox: { width: qrBoxSize, height: qrBoxSize },  // Responsive scan box
+            aspectRatio: 1.0,
+            disableFlip: true,
+            formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+            rememberLastUsedCamera: true,
+            showTorchButtonIfSupported: true,
+            showZoomSliderIfSupported: true,
+            defaultZoomValueIfSupported: 1.0,
+            experimentalFeatures: {
+                useBarCodeDetectorIfSupported: true
+            },
+            videoConstraints: {
+                facingMode: "environment",
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 720, max: 1080 }
+            }
+        };
+
+        try {
+            if (!canUseCameraOnThisOrigin()) {
+                throw new Error("Camera access is blocked on HTTP (192.168.x.x). Use HTTPS, or tap 'Scan From QR Image'.");
+            }
+            await requestCameraPermissionOnce();
+            const preferredCamera = await pickBestRearCamera();
+            debugLog('INFO', 'Starting html5QrCode with enhanced config for JSON QR codes...');
+            debugLog('INFO', 'Scanner settings:');
+            debugLog('INFO', `  - FPS: ${config.fps} (slower = better quality)`);
+            debugLog('INFO', `  - QR Box: ${config.qrbox.width}x${config.qrbox.height}`);
+            debugLog('INFO', `  - Zoom: ${config.defaultZoomValueIfSupported}x`);
+            
+            await html5QrCode.start(
+                preferredCamera,
+                config,
+                (decodedText) => {
+                    debugLog('SCAN', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    debugLog('SCAN', 'QR CODE DETECTED!');
+                    debugLog('SCAN', `Raw text length: ${decodedText.length} characters`);
+                    debugLog('SCAN', `Raw text preview: ${decodedText.substring(0, 150)}${decodedText.length > 150 ? '...' : ''}`);
+                    debugLog('SCAN', `First character: "${decodedText.charAt(0)}" (should be "{")`);
+                    
+                    // Check if this looks like a complete JSON QR (starts with { and is long enough)
+                    if (decodedText.startsWith('{') && decodedText.length > 30) {
+                        debugLog('SUCCESS', '✓ Detected complete JSON QR code format');
+                        onQRCodeScanned(decodedText);
+                    } else if (decodedText.startsWith('{') && decodedText.length <= 30) {
+                        debugLog('WARNING', '⚠️ Detected JSON but text is very short - possible incomplete read');
+                        debugLog('WARNING', 'Try moving camera closer or further from QR code');
+                        onQRCodeScanned(decodedText); // Still try to parse it
+                    } else if (decodedText.length < 20 && /^\d+$/.test(decodedText)) {
+                        debugLog('ERROR', '❌ Scanned numeric value - incomplete QR read!');
+                        debugLog('ERROR', `Expected JSON starting with "{", got numbers: "${decodedText}"`);
+                        debugLog('ERROR', 'This means the scanner only read part of the QR code');
+                        debugLog('ERROR', 'Suggestions:');
+                        debugLog('ERROR', '  1. Move camera slightly farther away');
+                        debugLog('ERROR', '  2. Ensure good lighting on the QR code');
+                        debugLog('ERROR', '  3. Clean camera lens');
+                        debugLog('ERROR', '  4. Make sure entire QR is in frame');
+                        showToast('⚠️ Partial QR read - please adjust distance/lighting and try again', 'warning');
+                    } else {
+                        debugLog('WARNING', '⚠️ Scanned QR does not appear to be in expected format');
+                        onQRCodeScanned(decodedText); // Still try to parse it
+                    }
+                },
+                (errorMessage) => {
+                    // Only log significant errors
+                    if (errorMessage && !errorMessage.includes("No MultiFormat Readers") && !errorMessage.includes("No QR code")) {
+                        debugLog('INFO', `html5QrCode: ${errorMessage.substring(0, 100)}`);
+                    }
+                }
+            );
+            isScanning = true;
+            debugLog('SUCCESS', 'QR Scanner started successfully');
+            debugLog('INFO', 'Expected QR format: {"qr_uuid":"...", "item":"...", "part":{"name":"...","maker":"..."}, "lot_no":"..."}');
+            debugLog('INFO', 'If you see numeric values, the camera is not reading the full QR code');
+            debugLog('INFO', '========================================');
+        } catch (err) {
+            debugLog('ERROR', `Failed to start scanner: ${err.message}`);
+            const rd = document.getElementById("verification-result");
+            rd.classList.remove("hidden");
+            rd.innerHTML = `
+                <div class="alert alert-error">
+                    <div>
+                        <span>❌</span>
+                        <div>
+                            <h3 class="font-bold">Camera Error</h3>
+                            <p class="text-sm">${err.message || "Could not access camera. Please check permissions."}</p>
+                            <p class="text-xs mt-1">Make sure you're on HTTPS or localhost, and have granted camera permissions.</p>
+                        </div>
+                    </div>
+                </div>`;
+            isScanning = false;
+        }
+    }
+
+    // ================================================================
+    // onQRCodeScanned with better error handling
+    // ================================================================
+    
+    async function onQRCodeScanned(decodedText) {
+        if (isProcessing) {
+            debugLog('SCAN', 'Already processing a scan, skipping...');
+            return;
+        }
+        isProcessing = true;
+
+        // Pause scanner while processing
+        if (html5QrCode && isScanning) {
+            debugLog('SCAN', 'Pausing scanner during processing');
+            try { await html5QrCode.pause(true); } catch (e) {}
+        }
+
+        document.getElementById("scan-status").classList.remove("hidden");
+
+        debugLog('SCAN', 'Parsing QR data...');
+        const parsed = parseQRData(decodedText);
+        
+        if (!parsed) {
+            debugLog('ERROR', '❌ QR data validation FAILED - invalid structure');
+            document.getElementById("scan-status").classList.add("hidden");
+            const rd = document.getElementById("verification-result");
+            rd.classList.remove("hidden");
+            rd.innerHTML = `<div class="alert alert-error"><div><span>❌</span><div><h3 class="font-bold">Invalid QR Format</h3><p class="text-sm">The scanner only read part of the QR code.<br/>This usually happens when the QR code is too small or the camera is too close/far.</p><p class="text-xs mt-2"><strong>Try these fixes:</strong><br/>• Move camera slightly farther away<br/>• Ensure good lighting<br/>• Clean camera lens<br/>• Make sure entire QR is in frame</p><p class="text-xs opacity-70 mt-2">Check console (F12) for details</p></div></div></div>`;
+            isProcessing = false;
+            // Resume scanner after error
+            setTimeout(() => {
+                if (html5QrCode && !isScanning) {
+                    html5QrCode.resume().catch(e => debugLog('ERROR', 'Failed to resume scanner', e));
+                    isScanning = true;
+                }
+            }, 2000);
+            return;
+        }
+
+        debugLog('SUCCESS', '✓ QR data is valid, proceeding with verification');
+        debugLog('INFO', 'User input for verification:', pendingUserInput);
+        
+        const vr = await verifyAndUpdateBackend(parsed);
+        debugLog('SCAN', `Verification result: ${vr.verified ? 'PASSED ✓' : 'FAILED ✗'}`);
+        debugLog('SCAN', `Backend updated: ${vr.backend_updated ? 'Yes' : 'No'}`);
+        if (vr.mismatches && vr.mismatches.length > 0) {
+            debugLog('ERROR', 'Mismatches found:', vr.mismatches);
+        }
+        
+        document.getElementById("scan-status").classList.add("hidden");
+        displayVerificationResult(vr, parsed);
+        if (!vr.backend_updated) showApiBanner();
+        isProcessing = false;
+        
+        // Resume scanner after processing
+        setTimeout(() => {
+            if (html5QrCode && !isScanning) {
+                html5QrCode.resume().catch(e => debugLog('ERROR', 'Failed to resume scanner', e));
+                isScanning = true;
+            }
+        }, 1000);
+    }
+
+    // ================================================================
+    // stopQrScanner and restartScanner
+    // ================================================================
+    
+    async function stopQrScanner() {
+        debugLog('INFO', 'Stopping QR scanner...');
+
+        if (html5QrCode && isScanning) {
+            try { await html5QrCode.stop(); } catch (e) {}
+            isScanning = false;
+        }
+        debugLog('INFO', 'QR scanner stopped');
+    }
+
+    async function restartScanner() {
+        debugLog('INFO', 'Restarting scanner...');
+        await stopQrScanner();
+        isProcessing = false;
+        setTimeout(() => startQrScanner(), 100);
+    }
+
+    async function scanQrFromImageFile(file) {
+        if (!file) return;
+        await stopQrScanner();
+        isProcessing = true;
+        const scanStatusEl = document.getElementById("scan-status");
+        const resultEl = document.getElementById("verification-result");
+        scanStatusEl.classList.remove("hidden");
+        resultEl.classList.add("hidden");
+        try {
+            const fileScanner = new Html5Qrcode("qr-reader");
+            const decodedText = await fileScanner.scanFile(file, true);
+            await fileScanner.clear();
+            await onQRCodeScanned(decodedText);
+        } catch (err) {
+            debugLog('ERROR', `Failed to scan image QR: ${err.message}`);
+            scanStatusEl.classList.add("hidden");
+            resultEl.classList.remove("hidden");
+            resultEl.innerHTML = `
+                <div class="alert alert-error">
+                    <div>
+                        <span>❌</span>
+                        <div>
+                            <h3 class="font-bold">Image Scan Failed</h3>
+                            <p class="text-sm">${err.message || "Could not decode QR from image."}</p>
+                            <p class="text-xs mt-1">Use a clear photo where the full QR code is visible.</p>
+                        </div>
+                    </div>
+                </div>`;
+            isProcessing = false;
+        }
+    }
+
+    // ================================================================
+    // Remaining original functions (keep as is)
+    // ================================================================
+
+    function showToast(message, type = 'success') {
+        const toastContainer = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type} shadow-lg`;
+        toast.innerHTML = `
+            <div>
+                <span>${type === 'success' ? '✅' : type === 'warning' ? '⚠️' : '❌'}</span>
+                <span>${message}</span>
+            </div>
+        `;
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    function showApiBanner() {
+        document.getElementById('currentApiEndpoint').textContent = FULL_API_URL;
+        document.getElementById('apiConfigBanner').classList.remove('hidden');
+    }
+    document.getElementById('closeApiBanner')?.addEventListener('click', () => document.getElementById('apiConfigBanner').classList.add('hidden'));
+
+    async function updateQRStatusInBackend(qrData, isVerified, mismatches) {
+        const payload = {
+            qr_uuid: qrData.qr_uuid,
+            verification_status: isVerified?"GOOD":"NO_GOOD",
+            verified_at: new Date().toISOString(),
+            verified_by: currentUser.employee_id||"admin",
+            user_input: pendingUserInput,
+            qr_data: qrData,
+            mismatches: mismatches||[]
+        };
+
+        for (const ep of [UPDATE_STATUS_URL, `${API_BASE_URL}/api/verify/status`, `${API_BASE_URL}/api/qr/update-status`]) {
+            try {
+                const r = await fetch(ep,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+                if(r.ok) return {success:true};
+            } catch(e){}
+        }
+
+        try {
+            await fetch(FULL_API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_input:pendingUserInput,scanned_data:qrData})});
+            return {success:true};
+        } catch(e){
+            return {success:false,error:e.message};
+        }
+    }
+
+    function performLocalCrossVerification(qrData) {
+        const m = [];
+        if (pendingUserInput.item_name.toLowerCase() !== qrData.item.toLowerCase()) m.push(`Item: "${pendingUserInput.item_name}" vs "${qrData.item}"`);
+        if (pendingUserInput.part_name.toLowerCase() !== qrData.part.name.toLowerCase()) m.push(`Part: "${pendingUserInput.part_name}" vs "${qrData.part.name}"`);
+        if (pendingUserInput.part_maker.toLowerCase() !== (qrData.part.maker || "").toLowerCase()) m.push(`Maker: "${pendingUserInput.part_maker}" vs "${qrData.part.maker || "N/A"}"`);
+        const ok = m.length === 0;
+        return { verified: ok, status: ok ? "GOOD" : "NO_GOOD", mismatches: m, message: ok ? "✅ VERIFICATION PASSED!" : "❌ VERIFICATION FAILED!" };
+    }
+
+    async function verifyAndUpdateBackend(qrData) {
+        const vr = performLocalCrossVerification(qrData);
+        const bu = await updateQRStatusInBackend(qrData, vr.verified, vr.mismatches);
+        return {...vr, backend_updated:bu.success, backend_error:bu.success?null:bu.error};
+    }
+
+    async function saveVerificationLog(entry) {
+        try {
+            const logData = {
+                qr_uuid: entry.qr_uuid,
+                qr_item: entry.item_name,
+                part_name: entry.part_name,
+                part_maker: entry.part_maker,
+                lot_no: entry.lot_no,
+                user_item: pendingUserInput.item_name,
+                user_part: pendingUserInput.part_name,
+                status: entry.status,
+                result: entry.result,
+                backend_updated: entry.backend_updated === 'Yes',
+                verified_by: entry.verified_by
+            };
+            const response = await fetch(VERIFICATION_LOGS_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(logData)
+            });
+            if (!response.ok) {
+                console.error('Failed to save verification log:', await response.text());
+            }
+        } catch (error) {
+            console.error('Failed to save verification log:', error);
+        }
+    }
+
+    function addVerificationEntryToTable(entry) {
+        allVerificationLogs.unshift(normalizeVerificationLogRow(entry));
+        if (allVerificationLogs.length > 500) allVerificationLogs.length = 500;
+        renderVerificationLogsTable();
+        const first = document.querySelector("#verificationHistoryTable tr:first-child");
+        if (first) {
+            first.classList.add("new-row");
+            first.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }
+
+    async function fetchBackendLogsForRecentTable() {
+        const tableBody = document.getElementById("verificationHistoryTable");
+        try {
+            const response = await fetch(VERIFICATION_LOGS_URL, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+            });
+            if (!response.ok) throw new Error(`Server returned ${response.status}`);
+            const data = await response.json();
+            const logs = data.logs || [];
+            allVerificationLogs = logs.map(normalizeVerificationLogRow);
+            renderVerificationLogsTable();
+        } catch (error) {
+            allVerificationLogs = [];
+            if (tableBody) {
+                tableBody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center py-8 text-error">
+                        <i class="fas fa-exclamation-triangle text-4xl mb-2 opacity-30 block"></i>
+                        <p>Failed to load verification logs</p>
+                        <p class="text-xs mt-1">${escCell(error.message)}</p>
+                    </td>
+                </tr>`;
+            }
+        }
+    }
+
+    function displayVerificationResult(result, qrData) {
+        const rd = document.getElementById("verification-result");
+        rd.classList.remove("hidden");
+        const ok = result.verified===true;
+        const hl = (a,b) => a===b?'match-highlight':'mismatch-highlight';
+        const userLot = (pendingUserInput.lot_no || "").trim();
+        const qrLot = String(qrData.lot_no || "");
+        const lotSame = userLot.toLowerCase() === qrLot.toLowerCase();
+        const lotRowClass = ok ? "match-highlight" : hl(userLot.toLowerCase(), qrLot.toLowerCase());
+        const lotNote = ok && !lotSame
+            ? `<p class="text-xs text-base-content/70 mt-1">Lot differs from QR; verification is based on item, part, and maker only.</p>`
+            : "";
+        rd.innerHTML = `<div class="alert alert-${ok?'success':'error'} shadow-lg mb-3">
+            <div><span class="text-2xl">${ok?"✅":"❌"}</span>
+            <div><h3 class="font-bold text-lg">Verification ${ok?"PASSED":"FAILED"}</h3>
+            <p class="text-sm">${result.message}</p></div></div>
+            </div>
+            <div class="mt-3 p-3 bg-base-100 rounded-lg border">
+                <div class="space-y-2 text-sm">
+                    <div class="${hl(pendingUserInput.item_name.toLowerCase(),qrData.item.toLowerCase())}">
+                        <div class="flex justify-between"><span>Item:</span><span>User: "${pendingUserInput.item_name}" | QR: "${qrData.item}"</span></div>
+                    </div>
+                    <div class="${hl(pendingUserInput.part_name.toLowerCase(),qrData.part.name.toLowerCase())}">
+                        <div class="flex justify-between"><span>Part:</span><span>User: "${pendingUserInput.part_name}" | QR: "${qrData.part.name}"</span></div>
+                    </div>
+                    <div class="${hl(pendingUserInput.part_maker.toLowerCase(),(qrData.part.maker||'').toLowerCase())}">
+                        <div class="flex justify-between"><span>Maker:</span><span>User: "${pendingUserInput.part_maker}" | QR: "${qrData.part.maker||'N/A'}"</span></div>
+                    </div>
+                    <div class="${lotRowClass}">
+                        <div class="flex justify-between gap-2"><span>Lot <span class="text-xs font-normal text-base-content/60">(reference)</span>:</span><span class="text-right">User: "${userLot || "—"}" | QR: "${qrLot || "—"}"</span></div>
+                        ${lotNote}
+                    </div>
+                    <div class="mt-2 text-xs"><span class="font-semibold">QR UUID:</span> <code>${qrData.qr_uuid}</code></div>
+                </div>
+            </div>`;
+        scanCount++;
+        document.getElementById('scanCountDisplay').textContent = scanCount;
+        if(ok){
+            verifiedCount++;
+            document.getElementById('verifiedCountDisplay').textContent=verifiedCount;
+        } else {
+            nogoodCount++;
+            document.getElementById('nogoodCountDisplay').textContent=nogoodCount;
+        }
+        const verificationEntry = {
+            timestamp: new Date().toISOString(),
+            qr_uuid: qrData.qr_uuid,
+            part_name: qrData.part.name,
+            part_maker: qrData.part.maker || '',
+            item_name: qrData.item,
+            lot_no: qrData.lot_no,
+            status: result.status,
+            result: ok ? 'GOOD' : 'NO_GOOD',
+            backend_updated: result.backend_updated ? "Yes" : "No",
+            verified_by: currentUser.employee_id || 'admin'
+        };
+        saveVerificationLog(verificationEntry);
+        addVerificationEntryToTable(verificationEntry);
+        showToast(`QR Verified: ${qrData.part.name} - ${ok ? 'GOOD' : 'NO GOOD'}`, ok ? 'success' : 'error');
+    }
+
+    function escCell(s) {
+        if (s == null || s === "") return "";
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function buildQrLabelPrintHtml(item, partName, partMaker, lotNo, uuid, imgDataUrl) {
+        const sub = escCell(`${partName} · ${partMaker}`);
+        const imgHtml = imgDataUrl ? `<img src="${imgDataUrl}" alt="" class="qr-print-img"/>` : "";
+        return `<div class="qr-print-label"><h2>${escCell(item)}</h2><p class="qr-print-sub">${sub}</p>${imgHtml}<div class="qr-print-meta"><span class="lbl">Lot No</span><span class="val">${escCell(String(lotNo ?? ""))}</span><span class="lbl">UUID</span><span class="val mono">${escCell(String(uuid ?? ""))}</span></div></div>`;
+    }
+
+    function getQrLabelPrintDocumentCss() {
+        return (
+            "@page{size:40mm 30mm;margin:0}html,body{margin:0;padding:0;width:40mm;height:30mm;overflow:hidden;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
+            "body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}.qr-print-label{box-sizing:border-box;width:40mm;height:30mm;margin:0;padding:0.8mm;text-align:center;border:0.5px solid #ccc;border-radius:2px;background:#fff;overflow:hidden;page-break-inside:avoid;break-inside:avoid}" +
+            ".qr-print-label h2{font-size:4.5pt;font-weight:700;margin:0;line-height:1.1;max-height:1.15em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+            ".qr-print-sub{color:#475569;font-size:3.5pt;margin:0;line-height:1.1;max-height:1.1em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+            ".qr-print-img{display:block;width:11mm;height:11mm;max-width:11mm;max-height:11mm;margin:0 auto;object-fit:contain;border:0.5px solid #e2e8f0;border-radius:1px;padding:0.5px}" +
+            ".qr-print-meta{background:#f8fafc;border-radius:1px;padding:0.4mm 0.6mm;font-size:3pt;text-align:left;display:grid;grid-template-columns:7mm 1fr;gap:0.2mm 0.5mm;line-height:1.1}" +
+            ".qr-print-meta .lbl{color:#64748b}.qr-print-meta .val{font-weight:600;word-break:break-all;overflow:hidden}.qr-print-meta .val.mono{font-family:ui-monospace,monospace;font-size:2.5pt;font-weight:500}"
+        );
+    }
+
+    function runQrLabelPrint(labelInnerHtml) {
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("aria-hidden", "true");
+        iframe.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;";
+        document.body.appendChild(iframe);
+        const win = iframe.contentWindow;
+        const doc = win.document;
+        doc.open();
+        doc.write("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>\u200b</title><style>");
+        doc.write(getQrLabelPrintDocumentCss());
+        doc.write("</style></head><body>");
+        doc.write(labelInnerHtml);
+        doc.write("</body></html>");
+        doc.close();
+        setTimeout(() => {
+            try {
+                win.focus();
+                win.print();
+            } catch (e) {
+                console.error(e);
+            }
+            setTimeout(() => {
+                if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+            }, 400);
+        }, 80);
+    }
+
+    function getQrBatchPrintDocumentCss() {
+        return (
+            "@page{size:letter;margin:3mm}html,body{margin:0;padding:0;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
+            "body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}" +
+            ".qr-print-sheet{display:grid;grid-template-columns:repeat(auto-fill,40mm);gap:2mm;align-content:start}" +
+            ".qr-print-sheet .qr-print-label{box-sizing:border-box;width:40mm;height:30mm;margin:0;padding:0.8mm;text-align:center;border:0.5px solid #ccc;border-radius:2px;background:#fff;overflow:hidden;page-break-inside:avoid;break-inside:avoid}" +
+            ".qr-print-sheet .qr-print-label h2{font-size:4.5pt;font-weight:700;margin:0;line-height:1.1;max-height:1.15em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+            ".qr-print-sheet .qr-print-sub{color:#475569;font-size:3.5pt;margin:0;line-height:1.1;max-height:1.1em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+            ".qr-print-sheet .qr-print-img{display:block;width:11mm;height:11mm;max-width:11mm;max-height:11mm;margin:0 auto;object-fit:contain;border:0.5px solid #e2e8f0;border-radius:1px;padding:0.5px}" +
+            ".qr-print-sheet .qr-print-meta{background:#f8fafc;border-radius:1px;padding:0.4mm 0.6mm;font-size:3pt;text-align:left;display:grid;grid-template-columns:7mm 1fr;gap:0.2mm 0.5mm;line-height:1.1}" +
+            ".qr-print-sheet .qr-print-meta .lbl{color:#64748b}.qr-print-sheet .qr-print-meta .val{font-weight:600;word-break:break-all;overflow:hidden}.qr-print-sheet .qr-print-meta .val.mono{font-family:ui-monospace,monospace;font-size:2.5pt;font-weight:500}"
+        );
+    }
+
+    function runQrBatchPrint(sheetInnerHtml) {
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("aria-hidden", "true");
+        iframe.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;";
+        document.body.appendChild(iframe);
+        const win = iframe.contentWindow;
+        const doc = win.document;
+        doc.open();
+        doc.write("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>\u200b</title><style>");
+        doc.write(getQrBatchPrintDocumentCss());
+        doc.write("</style></head><body><div class=\"qr-print-sheet\">");
+        doc.write(sheetInnerHtml);
+        doc.write("</div></body></html>");
+        doc.close();
+        setTimeout(() => {
+            try {
+                win.focus();
+                win.print();
+            } catch (e) {
+                console.error(e);
+            }
+            setTimeout(() => {
+                if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+            }, 400);
+        }, 80);
+    }
+
+    function renderQrDataToDataUrl(qrData, size) {
+        const payload = typeof qrData === "string" ? qrData : JSON.stringify(qrData);
+        return new Promise((resolve) => {
+            const wrap = document.createElement("div");
+            wrap.style.cssText = "position:fixed;left:-10000px;top:0;width:" + size + "px;height:" + size + "px;overflow:hidden;";
+            document.body.appendChild(wrap);
+            try {
+                new QRCode(wrap, {
+                    text: payload,
+                    width: size,
+                    height: size,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H,
+                });
+            } catch (e) {
+                console.error(e);
+            }
+            setTimeout(() => {
+                const cv = wrap.querySelector("canvas");
+                const im = wrap.querySelector("img");
+                const url = cv ? cv.toDataURL("image/png") : im && im.src ? im.src : "";
+                wrap.remove();
+                resolve(url);
+            }, 100);
+        });
+    }
+
+    function updateQrListSelectionUi() {
+        const btn = document.getElementById("printSelectedQrBtn");
+        if (!btn) return;
+        const n = selectedQrUuids.size;
+        btn.disabled = n === 0;
+        btn.innerHTML = `<i class="fas fa-print mr-1"></i> Print selected${n ? ` (${n})` : ""}`;
+    }
+
+    async function printSelectedQrBatch() {
+        const ordered = allQrRecords.filter((r) => selectedQrUuids.has(r.qr_uuid));
+        if (!ordered.length) {
+            showToast("Select at least one QR code to print.", "warning");
+            return;
+        }
+        const btn = document.getElementById("printSelectedQrBtn");
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Preparing…';
+        }
+        try {
+            const parts = [];
+            for (const r of ordered) {
+                const img = await renderQrDataToDataUrl(r.qr_data, 180);
+                parts.push(buildQrLabelPrintHtml(r.item, r.part_name, r.part_maker, r.lot_no, r.qr_uuid, img));
+            }
+            runQrBatchPrint(parts.join(""));
+        } catch (e) {
+            console.error(e);
+            showToast("Could not prepare batch print.", "error");
+        } finally {
+            updateQrListSelectionUi();
+        }
+    }
+
+    async function deleteVerificationLogRow(row) {
+        if (!row || !confirm("Delete this verification log?")) return;
+        if (row.log_id != null) {
+            try {
+                const resp = await fetch(`${VERIFICATION_LOGS_URL}/${row.log_id}`, { method: "DELETE" });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || "Delete failed");
+                }
+            } catch (e) {
+                showToast(e.message || "Failed to delete", "error");
+                return;
+            }
+        }
+        allVerificationLogs = allVerificationLogs.filter((x) => x.row_uid !== row.row_uid);
+        renderVerificationLogsTable();
+        showToast("Verification log deleted", "success");
+    }
+
+    function normalizeVerificationLogRow(raw) {
+        const partName = raw.part_name || (raw.qr_data && raw.qr_data.part && raw.qr_data.part.name) || raw.part_name_from_qr || "";
+        const partMaker = raw.part_maker || (raw.qr_data && raw.qr_data.part && raw.qr_data.part.maker) || "";
+        const itemName = raw.qr_item || raw.item_name || raw.user_item || "";
+        const ts = raw.timestamp ? new Date(raw.timestamp) : new Date();
+        const statusNorm = String(raw.status || "").toUpperCase().replace(/\s+/g, "_");
+        const resultNorm = String(raw.result || "").toUpperCase().replace(/\s+/g, "_");
+        const logId = raw.id != null && raw.id !== "" ? Number(raw.id) : null;
+        const tMs = ts.getTime();
+        const row_uid = logId != null && !Number.isNaN(logId) ? "db-" + logId : "local-" + String(raw.qr_uuid || "") + "-" + tMs + "-" + Math.random().toString(36).slice(2, 9);
+        return {
+            log_id: logId != null && !Number.isNaN(logId) ? logId : null,
+            row_uid,
+            timestamp: ts.toISOString(),
+            timestampMs: tMs,
+            qr_uuid: String(raw.qr_uuid || ""),
+            part_name: partName,
+            part_maker: partMaker,
+            item_name: itemName,
+            lot_no: String(raw.lot_no || ""),
+            status: statusNorm === "NO_GOOD" ? "NO_GOOD" : statusNorm === "GOOD" ? "GOOD" : statusNorm,
+            result: resultNorm === "NO_GOOD" ? "NO_GOOD" : resultNorm === "GOOD" ? "GOOD" : resultNorm,
+            verified_by: String(raw.verified_by || "System"),
+        };
+    }
+
+    function verificationFiltersActive() {
+        return !!(
+            (document.getElementById("verificationLogSearch")?.value || "").trim() ||
+            document.getElementById("verificationFilterStatus")?.value ||
+            document.getElementById("verificationFilterDateFrom")?.value ||
+            document.getElementById("verificationFilterDateTo")?.value
+        );
+    }
+
+    function syncVerificationStatusLabel() {
+        const val = document.getElementById("verificationFilterStatus")?.value ?? "";
+        const lbl = document.getElementById("verificationStatusLabel");
+        const map = {
+            "": "All Status",
+            GOOD: "✅ GOOD",
+            NO_GOOD: "❌ NO GOOD",
+            PENDING: "⏳ PENDING",
+        };
+        if (lbl) lbl.textContent = map[val] ?? "All Status";
+    }
+
+    function initVerificationStatusDropdown() {
+        document.querySelectorAll(".verification-status-pick").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const v = btn.getAttribute("data-value") ?? "";
+                const h = document.getElementById("verificationFilterStatus");
+                if (h) h.value = v;
+                syncVerificationStatusLabel();
+                renderVerificationLogsTable();
+                document.getElementById("verificationStatusTrigger")?.blur();
+            });
+        });
+    }
+
+    function getFilteredVerificationLogs() {
+        const q = (document.getElementById("verificationLogSearch")?.value || "").toLowerCase().trim();
+        const st = document.getElementById("verificationFilterStatus")?.value || "";
+        const df = document.getElementById("verificationFilterDateFrom")?.value;
+        const dt = document.getElementById("verificationFilterDateTo")?.value;
+        let fromMs = null;
+        let toMs = null;
+        if (df) {
+            const d = new Date(df);
+            d.setHours(0, 0, 0, 0);
+            fromMs = d.getTime();
+        }
+        if (dt) {
+            const d = new Date(dt);
+            d.setHours(23, 59, 59, 999);
+            toMs = d.getTime();
+        }
+        return allVerificationLogs.filter((row) => {
+            if (st && row.status !== st) return false;
+            if (fromMs !== null && row.timestampMs < fromMs) return false;
+            if (toMs !== null && row.timestampMs > toMs) return false;
+            if (!q) return true;
+            const localeStr = new Date(row.timestamp).toLocaleString();
+            const blob = [
+                localeStr,
+                row.timestamp,
+                row.qr_uuid,
+                row.part_name,
+                row.part_maker,
+                row.item_name,
+                row.lot_no,
+                row.status,
+                row.result,
+                row.verified_by,
+            ]
+                .join(" ")
+                .toLowerCase();
+            return blob.includes(q);
+        });
+    }
+
+    function renderVerificationLogsTable() {
+        const tableBody = document.getElementById("verificationHistoryTable");
+        const countEl = document.getElementById("verificationFilterCount");
+        if (!tableBody) return;
+        const filtered = getFilteredVerificationLogs();
+        const total = allVerificationLogs.length;
+        if (countEl) {
+            if (verificationFiltersActive() && total > 0) {
+                countEl.textContent = `Showing ${filtered.length} of ${total} entr${total === 1 ? "y" : "ies"}`;
+                countEl.classList.remove("hidden");
+            } else {
+                countEl.textContent = "";
+                countEl.classList.add("hidden");
+            }
+        }
+        if (total === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center py-8 text-base-content/50">
+                        <i class="fas fa-qrcode text-4xl mb-2 opacity-30 block"></i>
+                        <p>No verifications yet. Scan a QR code to get started.</p>
+                    </td>
+                </tr>`;
+            return;
+        }
+        if (filtered.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center py-8 text-base-content/50">
+                        <i class="fas fa-filter text-3xl mb-2 opacity-30 block"></i>
+                        <p>No logs match your filters.</p>
+                        <button type="button" id="verificationClearFiltersInline" class="btn btn-link btn-sm text-primary">Clear filters</button>
+                    </td>
+                </tr>`;
+            document.getElementById("verificationClearFiltersInline")?.addEventListener("click", clearVerificationFilters);
+            return;
+        }
+        tableBody.innerHTML = filtered
+            .map((row) => {
+                const shortUuid = row.qr_uuid ? row.qr_uuid.substring(0, 8) + "..." : "N/A";
+                const timeStr = new Date(row.timestamp).toLocaleString();
+                const pn = row.part_name || "N/A";
+                const pm = row.part_maker || "N/A";
+                const it = row.item_name || "N/A";
+                const stOk = row.status === "GOOD";
+                const reOk = row.result === "GOOD";
+                const ruid = escCell(row.row_uid || "");
+                return `<tr>
+        <td class="text-sm whitespace-nowrap">${escCell(timeStr)}</td>
+        <td class="text-xs font-mono">${escCell(shortUuid)}</td>
+        <td class="text-sm font-medium">${escCell(pn)}</td>
+        <td class="text-sm">${escCell(pm)}</td>
+        <td class="text-sm">${escCell(it)}</td>
+        <td><span class="badge badge-soft ${stOk ? "badge-success" : "badge-error"}">${escCell(row.status || "N/A")}</span></td>
+        <td><span class="badge badge-soft ${reOk ? "badge-success" : "badge-error"}">${escCell(row.result || "N/A")}</span></td>
+        <td class="text-sm">${escCell(row.verified_by)}</td>
+        <td class="no-print text-center"><button type="button" class="btn btn-ghost btn-xs text-error verif-log-del" data-row-uid="${ruid}" title="Delete log"><i class="fas fa-trash-alt"></i></button></td>
+    </tr>`;
+            })
+            .join("");
+    }
+
+    function clearVerificationFilters() {
+        const s = document.getElementById("verificationLogSearch");
+        if (s) s.value = "";
+        const fs = document.getElementById("verificationFilterStatus");
+        if (fs) fs.value = "";
+        syncVerificationStatusLabel();
+        const dff = document.getElementById("verificationFilterDateFrom");
+        if (dff) dff.value = "";
+        const dtt = document.getElementById("verificationFilterDateTo");
+        if (dtt) dtt.value = "";
+        renderVerificationLogsTable();
+    }
+
+    function getTodayForInput() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, "0");
+        const d = String(now.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    }
+
+    function downloadVerificationLogsForDay() {
+        const dayInput = document.getElementById("exportLogsDate");
+        const selectedDate = (dayInput?.value || "").trim() || getTodayForInput();
+        if (dayInput && !dayInput.value) dayInput.value = selectedDate;
+        const url = `${VERIFICATION_LOGS_EXPORT_URL}?date=${encodeURIComponent(selectedDate)}`;
+        window.open(url, "_blank");
+    }
+
+    document.getElementById("verificationHistoryTable")?.addEventListener("click", (e) => {
+        const btn = e.target.closest(".verif-log-del");
+        if (!btn) return;
+        const uid = btn.getAttribute("data-row-uid");
+        if (!uid) return;
+        const row = allVerificationLogs.find((r) => r.row_uid === uid);
+        if (row) deleteVerificationLogRow(row);
+    });
+
+    function debounce(fn, waitMs) {
+        let timeoutId = null;
+        return (...args) => {
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => fn(...args), waitMs);
+        };
+    }
+
+    function updateMasterDeleteControls() {
+        const deleteBtn = document.getElementById("deleteSelectedMasterBtn");
+        const selectAllChk = document.getElementById("masterSelectAllChk");
+        if (!deleteBtn || !selectAllChk) return;
+        const pagePartIds = masterListRows.map((r) => r.part_id).filter(Boolean);
+        const selectedOnPage = pagePartIds.filter((id) => selectedMasterDeleteRows.has(id)).length;
+        const hasRows = pagePartIds.length > 0;
+        const allFilteredChecked = hasRows && selectedOnPage === pagePartIds.length;
+
+        selectAllChk.checked = allFilteredChecked;
+        selectAllChk.indeterminate = selectedOnPage > 0 && !allFilteredChecked;
+        deleteBtn.disabled = selectedMasterDeleteRows.size === 0;
+        deleteBtn.innerHTML = `<i class="fas fa-trash"></i> Delete selected${selectedMasterDeleteRows.size > 0 ? ` (${selectedMasterDeleteRows.size})` : ""}`;
+    }
+
+    function updateMasterPager() {
+        const pager = document.getElementById("masterListPager");
+        const info = document.getElementById("masterListPageInfo");
+        const prevBtn = document.getElementById("masterListPrevBtn");
+        const nextBtn = document.getElementById("masterListNextBtn");
+        if (!pager || !info || !prevBtn || !nextBtn) return;
+        if (masterListMeta.total_rows <= 0) {
+            pager.classList.add("hidden");
+            return;
+        }
+        pager.classList.remove("hidden");
+        info.textContent = `Page ${masterListMeta.page} of ${masterListMeta.total_pages || 1} (${masterListMeta.total_rows} rows)`;
+        prevBtn.disabled = !masterListMeta.has_prev;
+        nextBtn.disabled = !masterListMeta.has_next;
+    }
+
+    function renderMasterList() {
+        const tbody = document.getElementById("masterListBody");
+        const noMatch = document.getElementById("masterListNoMatch");
+        const wrap = document.getElementById("masterListTableWrap");
+        if (!tbody || !noMatch || !wrap) return;
+        if (selectedMasterIndex !== null && !masterListRows[selectedMasterIndex]) {
+            selectedMasterIndex = null;
+            document.getElementById("selectedMasterSummary")?.classList.add("hidden");
+        }
+        tbody.innerHTML = "";
+        if (masterListRows.length === 0) {
+            noMatch.classList.remove("hidden");
+            updateMasterDeleteControls();
+            updateMasterPager();
+            return;
+        }
+        noMatch.classList.add("hidden");
+        masterListRows.forEach((r, idx) => {
+            const tr = document.createElement("tr");
+            tr.className = "master-list-row" + (selectedMasterIndex === idx ? " master-list-row-selected" : "");
+            tr.tabIndex = 0;
+            tr.dataset.idx = String(idx);
+            tr.innerHTML = `
+                <td class="text-center" data-no-row-select="1">
+                    <input type="checkbox" class="checkbox checkbox-xs master-row-check" data-part-id="${r.part_id}" ${selectedMasterDeleteRows.has(r.part_id) ? "checked" : ""} aria-label="Select row for delete">
+                </td>
+                <td class="text-xs">${escCell(r.customer_name)}</td>
+                <td class="text-xs font-medium">${escCell(r.item)}</td>
+                <td class="text-xs">${escCell(r.part_name)}</td>
+                <td class="text-xs">${escCell(r.maker)}</td>
+            `;
+            tr.addEventListener("click", (ev) => {
+                if (ev.target.closest("[data-no-row-select='1']")) return;
+                selectMasterRow(idx);
+            });
+            tr.addEventListener("keydown", (ev) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    selectMasterRow(idx);
+                }
+            });
+            tbody.appendChild(tr);
+        });
+        updateMasterDeleteControls();
+        updateMasterPager();
+    }
+
+    function selectMasterRow(idx) {
+        selectedMasterIndex = idx;
+        const r = masterListRows[idx];
+        if (!r) return;
+        document.getElementById("sumCustomer").textContent = r.customer_name;
+        document.getElementById("sumItem").textContent = r.item;
+        document.getElementById("sumPart").textContent = r.part_name;
+        document.getElementById("sumMaker").textContent = r.maker || "—";
+        document.getElementById("selectedMasterSummary").classList.remove("hidden");
+        renderMasterList();
+    }
+
+    async function loadMasterListForQr(page = 1) {
+        const loading = document.getElementById("masterListLoading");
+        const errBox = document.getElementById("masterListError");
+        const empty = document.getElementById("masterListEmpty");
+        const wrap = document.getElementById("masterListTableWrap");
+        const noMatch = document.getElementById("masterListNoMatch");
+        if (!loading || !errBox || !empty || !wrap) return;
+        loading.classList.remove("hidden");
+        errBox.classList.add("hidden");
+        empty.classList.add("hidden");
+        wrap.classList.add("hidden");
+        noMatch.classList.add("hidden");
+        document.getElementById("masterListBody").innerHTML = "";
+        try {
+            const searchValue = (document.getElementById("masterListSearch")?.value || "").trim();
+            const params = new URLSearchParams({
+                page: String(page),
+                page_size: String(masterListMeta.page_size),
+                search: searchValue,
+            });
+            const resp = await fetch(`${MASTER_ROWS_URL}?${params.toString()}`, { method: "GET", headers: { Accept: "application/json" } });
+            if (!resp.ok) throw new Error("Server returned " + resp.status);
+            const data = await resp.json();
+            masterListRows = Array.isArray(data.rows) ? data.rows : [];
+            masterListMeta = data.pagination || masterListMeta;
+            loading.classList.add("hidden");
+            selectedMasterIndex = null;
+            document.getElementById("selectedMasterSummary")?.classList.add("hidden");
+            if (masterListRows.length === 0) {
+                empty.classList.remove("hidden");
+                renderMasterList();
+                return;
+            }
+            wrap.classList.remove("hidden");
+            renderMasterList();
+        } catch (e) {
+            loading.classList.add("hidden");
+            errBox.classList.remove("hidden");
+            document.getElementById("masterListErrorMsg").textContent = e.message || "Could not load master list.";
+        }
+    }
+
+    async function deleteSelectedMasterRows() {
+        const selectedPartIds = Array.from(selectedMasterDeleteRows);
+        if (selectedPartIds.length === 0) {
+            showToast("Select at least one row to delete.", "warning");
+            return;
+        }
+
+        const result = await Swal.fire({
+            title: "Delete selected rows?",
+            html: `You are about to delete <strong>${selectedPartIds.length}</strong> row(s) from the master list.<br>This action cannot be undone.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, delete",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#dc2626",
+            reverseButtons: true,
+        });
+        if (!result.isConfirmed) return;
+
+        const deleteBtn = document.getElementById("deleteSelectedMasterBtn");
+        if (deleteBtn) deleteBtn.disabled = true;
+        try {
+            const resp = await fetch(MASTER_DELETE_URL, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json", Accept: "application/json" },
+                body: JSON.stringify({ part_ids: selectedPartIds }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) throw new Error(data.error || data.message || `Server returned ${resp.status}`);
+
+            await Swal.fire({
+                title: "Deleted",
+                text: data.message || `${selectedPartIds.length} row(s) deleted successfully.`,
+                icon: "success",
+                timer: 1700,
+                showConfirmButton: false,
+            });
+            selectedMasterDeleteRows = new Set();
+            const targetPage = masterListMeta.page > 1 && masterListRows.length <= selectedPartIds.length
+                ? masterListMeta.page - 1
+                : masterListMeta.page;
+            await loadMasterListForQr(targetPage);
+        } catch (e) {
+            await Swal.fire({
+                title: "Delete failed",
+                text: e.message || "Could not delete selected rows.",
+                icon: "error",
+            });
+        } finally {
+            updateMasterDeleteControls();
+        }
+    }
+
+    function updateVerifyPager() {
+        const pager = document.getElementById("verifyMasterPager");
+        const info = document.getElementById("verifyMasterPageInfo");
+        const prevBtn = document.getElementById("verifyMasterPrevBtn");
+        const nextBtn = document.getElementById("verifyMasterNextBtn");
+        if (!pager || !info || !prevBtn || !nextBtn) return;
+        if (verifyMasterMeta.total_rows <= 0) {
+            pager.classList.add("hidden");
+            return;
+        }
+        pager.classList.remove("hidden");
+        info.textContent = `Page ${verifyMasterMeta.page} of ${verifyMasterMeta.total_pages || 1} (${verifyMasterMeta.total_rows} rows)`;
+        prevBtn.disabled = !verifyMasterMeta.has_prev;
+        nextBtn.disabled = !verifyMasterMeta.has_next;
+    }
+
+    function renderVerifyMasterList() {
+        const tbody = document.getElementById("verifyMasterBody");
+        const noMatch = document.getElementById("verifyMasterNoMatch");
+        const wrap = document.getElementById("verifyMasterTableWrap");
+        if (!tbody || !noMatch || !wrap) return;
+        if (verifySelectedIdx !== null && !verifyMasterRows[verifySelectedIdx]) verifySelectedIdx = null;
+        tbody.innerHTML = "";
+        if (verifyMasterRows.length === 0) {
+            noMatch.classList.remove("hidden");
+            updateVerifyPager();
+            return;
+        }
+        noMatch.classList.add("hidden");
+        verifyMasterRows.forEach((r, idx) => {
+            const tr = document.createElement("tr");
+            tr.className = "master-list-row" + (verifySelectedIdx === idx ? " master-list-row-selected" : "");
+            tr.tabIndex = 0;
+            tr.innerHTML = `<td class="text-xs">${escCell(r.customer_name)}</td><td class="text-xs font-medium">${escCell(r.item)}</td><td class="text-xs">${escCell(r.part_name)}</td><td class="text-xs">${escCell(r.maker)}</td>`;
+            tr.addEventListener("click", () => selectVerifyMasterRow(idx));
+            tr.addEventListener("keydown", (ev) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    selectVerifyMasterRow(idx);
+                }
+            });
+            tbody.appendChild(tr);
+        });
+        updateVerifyPager();
+    }
+
+    function selectVerifyMasterRow(idx) {
+        verifySelectedIdx = idx;
+        const r = verifyMasterRows[idx];
+        if (!r) return;
+        document.getElementById("modalItemName").value = r.item;
+        document.getElementById("modalPartName").value = r.part_name;
+        document.getElementById("modalPartMaker").value = r.maker || "";
+        renderVerifyMasterList();
+    }
+
+    async function loadVerifyMasterList(page = 1) {
+        const loading = document.getElementById("verifyMasterLoading");
+        const errBox = document.getElementById("verifyMasterError");
+        const empty = document.getElementById("verifyMasterEmpty");
+        const wrap = document.getElementById("verifyMasterTableWrap");
+        const noMatch = document.getElementById("verifyMasterNoMatch");
+        if (!loading || !errBox || !empty || !wrap) return;
+        loading.classList.remove("hidden");
+        errBox.classList.add("hidden");
+        empty.classList.add("hidden");
+        wrap.classList.add("hidden");
+        noMatch.classList.add("hidden");
+        const tbody = document.getElementById("verifyMasterBody");
+        if (tbody) tbody.innerHTML = "";
+        verifySelectedIdx = null;
+        try {
+            const searchValue = (document.getElementById("verifyMasterSearch")?.value || "").trim();
+            const params = new URLSearchParams({
+                page: String(page),
+                page_size: String(verifyMasterMeta.page_size),
+                search: searchValue,
+            });
+            const resp = await fetch(`${MASTER_ROWS_URL}?${params.toString()}`, { method: "GET", headers: { Accept: "application/json" } });
+            if (!resp.ok) throw new Error("Server returned " + resp.status);
+            const data = await resp.json();
+            verifyMasterRows = Array.isArray(data.rows) ? data.rows : [];
+            verifyMasterMeta = data.pagination || verifyMasterMeta;
+            loading.classList.add("hidden");
+            if (verifyMasterRows.length === 0) {
+                empty.classList.remove("hidden");
+                renderVerifyMasterList();
+                return;
+            }
+            wrap.classList.remove("hidden");
+            renderVerifyMasterList();
+        } catch (e) {
+            loading.classList.add("hidden");
+            errBox.classList.remove("hidden");
+            const em = document.getElementById("verifyMasterErrorMsg");
+            if (em) em.textContent = e.message || "Could not load master list.";
+        }
+    }
+
+    const debouncedLoadVerifyMasterList = debounce(() => loadVerifyMasterList(1), 300);
+    const debouncedLoadMasterListForQr = debounce(() => loadMasterListForQr(1), 300);
+
+    document.getElementById("verifyMasterSearch")?.addEventListener("input", debouncedLoadVerifyMasterList);
+    document.getElementById("verifyMasterRefreshBtn")?.addEventListener("click", () => loadVerifyMasterList(verifyMasterMeta.page));
+    document.getElementById("verifyMasterPrevBtn")?.addEventListener("click", () => {
+        if (verifyMasterMeta.has_prev) loadVerifyMasterList(verifyMasterMeta.page - 1);
+    });
+    document.getElementById("verifyMasterNextBtn")?.addEventListener("click", () => {
+        if (verifyMasterMeta.has_next) loadVerifyMasterList(verifyMasterMeta.page + 1);
+    });
+
+    document.getElementById("masterListSearch")?.addEventListener("input", debouncedLoadMasterListForQr);
+    document.getElementById("refreshMasterListBtn")?.addEventListener("click", () => loadMasterListForQr(masterListMeta.page));
+    document.getElementById("masterListPrevBtn")?.addEventListener("click", () => {
+        if (masterListMeta.has_prev) loadMasterListForQr(masterListMeta.page - 1);
+    });
+    document.getElementById("masterListNextBtn")?.addEventListener("click", () => {
+        if (masterListMeta.has_next) loadMasterListForQr(masterListMeta.page + 1);
+    });
+    document.getElementById("deleteSelectedMasterBtn")?.addEventListener("click", () => deleteSelectedMasterRows());
+    document.getElementById("masterSelectAllChk")?.addEventListener("change", (e) => {
+        const checked = Boolean(e.target?.checked);
+        masterListRows.forEach((row) => {
+            if (!row.part_id) return;
+            if (checked) selectedMasterDeleteRows.add(row.part_id);
+            else selectedMasterDeleteRows.delete(row.part_id);
+        });
+        renderMasterList();
+    });
+    document.getElementById("masterListBody")?.addEventListener("change", (e) => {
+        const chk = e.target.closest(".master-row-check");
+        if (!chk) return;
+        const partId = Number(chk.getAttribute("data-part-id"));
+        if (!Number.isInteger(partId)) return;
+        if (chk.checked) selectedMasterDeleteRows.add(partId);
+        else selectedMasterDeleteRows.delete(partId);
+        updateMasterDeleteControls();
+    });
+
+    document.getElementById("generateQrForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const lot = document.getElementById("genLotNo").value.trim();
+        const errEl = document.getElementById("genQrError"),
+            sucEl = document.getElementById("genQrSuccess"),
+            resEl = document.getElementById("genQrResult"),
+            btn = document.getElementById("submitGenerateBtn");
+        errEl.innerText = "";
+        if (selectedMasterIndex === null || !masterListRows[selectedMasterIndex]) {
+            errEl.innerText = "Select a row from the master list (customer, item, part, and maker).";
+            return;
+        }
+        const row = masterListRows[selectedMasterIndex];
+        const item = row.item.trim(),
+            part = row.part_name.trim(),
+            maker = (row.maker || "").trim();
+        if (!item || !part || !maker || !lot) {
+            errEl.innerText = "Selected row must include part and maker, and lot number is required.";
+            return;
+        }
+        errEl.innerText=""; sucEl.classList.add("hidden"); resEl.classList.add("hidden"); resEl.innerHTML="";
+        btn.disabled=true; btn.innerHTML='<div class="loading-spinner mr-2"></div> Generating...';
+        try {
+            const resp = await fetch(GENERATE_API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item_name:item,part_name:part,part_maker:maker,lot_no:lot})});
+            const data = await resp.json();
+            if(!resp.ok) throw new Error(data.error||(resp.status===409?"QR already exists":resp.status===404?"Item/part not found":"Generation failed"));
+            const qr = data.qr_record;
+            const qrPayload = qr.qr_data ? JSON.stringify(qr.qr_data) : JSON.stringify({qr_uuid:qr.qr_uuid,item:qr.item,part:qr.part,lot_no:qr.lot_no});
+            sucEl.innerText="✅ QR Code generated successfully!"; sucEl.classList.remove("hidden"); resEl.classList.remove("hidden");
+            resEl.innerHTML=`<div class="bg-base-200 rounded-xl p-4"><div class="flex flex-col items-center gap-3"><div class="w-full"><div class="grid grid-cols-2 gap-2 text-sm mb-4 p-3 bg-base-100 rounded-lg"><span class="font-semibold">Item:</span><span>${qr.item}</span><span class="font-semibold">Part:</span><span>${qr.part.name}</span><span class="font-semibold">Maker:</span><span>${qr.part.maker}</span><span class="font-semibold">Lot No:</span><span>${qr.lot_no}</span><span class="font-semibold">UUID:</span><span class="font-mono text-xs break-all">${qr.qr_uuid}</span><span class="font-semibold">Status:</span><span class="badge badge-soft badge-warning">${qr.status}</span></div></div><div class="qr-code-container w-full"><div id="qrCodeCanvas" class="qr-preview"></div><div class="text-center mt-1 flex gap-2 flex-wrap justify-center"><button id="downloadQrBtn" class="btn btn-sm btn-primary"><i class="fas fa-download mr-1"></i> Download QR Code</button><button id="printGeneratedQrBtn" class="btn btn-sm btn-outline"><i class="fas fa-print mr-1"></i> Print QR Code</button><button id="copyQrDataBtn" class="btn btn-sm btn-outline"><i class="fas fa-copy mr-1"></i> Copy QR Data</button></div></div></div></div>`;
+            setTimeout(()=>{
+                const c=document.getElementById("qrCodeCanvas"); c.innerHTML="";
+                new QRCode(c,{text:qrPayload,width:216,height:216,colorDark:"#000000",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H});
+                document.getElementById("downloadQrBtn").onclick=()=>{setTimeout(()=>{const cv=c.querySelector("canvas"),im=c.querySelector("img");const a=document.createElement("a");a.download=`QR_${qr.qr_uuid.substring(0,8)}.png`;a.href=cv?cv.toDataURL("image/png"):im.src;a.click();},200);};
+                document.getElementById("printGeneratedQrBtn").onclick=()=>{setTimeout(()=>{const cv=c.querySelector("canvas"),im=c.querySelector("img");const imgSrc=cv?cv.toDataURL("image/png"):(im?im.src:"");runQrLabelPrint(buildQrLabelPrintHtml(qr.item,qr.part.name,qr.part.maker,qr.lot_no,qr.qr_uuid,imgSrc));},150);};
+                document.getElementById("copyQrDataBtn").onclick=()=>{navigator.clipboard.writeText(qrPayload);const b=document.getElementById("copyQrDataBtn");b.innerHTML='<i class="fas fa-check mr-1"></i> Copied!';setTimeout(()=>{b.innerHTML='<i class="fas fa-copy mr-1"></i> Copy QR Data';},2000);};
+            },50);
+            document.getElementById("genLotNo").value = "";
+            selectedMasterIndex = null;
+            document.getElementById("selectedMasterSummary")?.classList.add("hidden");
+            renderMasterList();
+            fetchTotalQrCount();
+        } catch(err){ errEl.innerText=err.message; resEl.classList.add("hidden"); }
+        btn.disabled=false; btn.innerHTML='<i class="fas fa-qrcode mr-2"></i> Generate QR Code';
+    });
+
+    function normaliseRecord(r) {
+        const p=r.part||{};
+        return { qr_uuid:r.qr_uuid||r.uuid||'', item:r.item||r.item_name||'', part_name:p.name||r.part_name||'', part_maker:p.maker||r.part_maker||'', lot_no:r.lot_no||'', status:(r.status||'PENDING').toUpperCase(), created_at:r.created_at||r.createdAt||'', qr_data:r.qr_data||{qr_uuid:r.qr_uuid,item:r.item,part:p,lot_no:r.lot_no} };
+    }
+
+    function updateQrListBadge(n) {
+        const b=document.getElementById('qrListBadge');
+        if(n>0){b.textContent=n>99?'99+':n;b.classList.remove('hidden');}else b.classList.add('hidden');
+    }
+
+    async function fetchQrList() {
+        document.getElementById('qrListGrid').innerHTML='';
+        document.getElementById('qrListLoading').classList.remove('hidden');
+        document.getElementById('qrListEmpty').classList.add('hidden');
+        document.getElementById('qrListError').classList.add('hidden');
+        try {
+            const resp = await fetch(LIST_QR_URL,{method:'GET',headers:{'Content-Type':'application/json'}});
+            if(!resp.ok) throw new Error(`Server returned ${resp.status}`);
+            const data = await resp.json();
+            const records = Array.isArray(data)?data:(data.qr_records||data.records||data.data||[]);
+            allQrRecords = records.map(normaliseRecord);
+            selectedQrUuids.clear();
+            document.getElementById('qrListLoading').classList.add('hidden');
+            renderQrList();
+            updateQrListSelectionUi();
+            updateQrListBadge(allQrRecords.length);
+        } catch(err) {
+            document.getElementById('qrListLoading').classList.add('hidden');
+            document.getElementById('qrListError').classList.remove('hidden');
+            document.getElementById('qrListErrorMsg').textContent = err.message||'Could not connect to backend.';
+        }
+    }
+
+    function getFilteredRecords() {
+        const search=(document.getElementById('qrListSearch')?.value||'').toLowerCase().trim();
+        const sf=document.getElementById('qrListStatusFilter')?.value||'';
+        const sort=document.getElementById('qrListSortBy')?.value||'newest';
+        let f=allQrRecords.filter(r=>{
+            const ms=!search||[r.item,r.part_name,r.part_maker,r.lot_no,r.qr_uuid].some(v=>v.toLowerCase().includes(search));
+            const mf=!sf||r.status===sf;
+            return ms&&mf;
+        });
+        f.sort((a,b)=>{
+            if(sort==='newest') return new Date(b.created_at||0)-new Date(a.created_at||0);
+            if(sort==='oldest') return new Date(a.created_at||0)-new Date(b.created_at||0);
+            if(sort==='item')   return a.item.localeCompare(b.item);
+            if(sort==='status') return a.status.localeCompare(b.status);
+            return 0;
+        });
+        return f;
+    }
+
+    function statusBadgeHtml(status) {
+        const map={GOOD:{cls:'status-badge-good',icon:'✅',label:'GOOD'},NO_GOOD:{cls:'status-badge-nogood',icon:'❌',label:'NO GOOD'},PENDING:{cls:'status-badge-pending',icon:'⏳',label:'PENDING'}};
+        const s=map[status]||map['PENDING'];
+        return `<span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${s.cls}">${s.icon} ${s.label}</span>`;
+    }
+
+    function renderQrList() {
+        const filtered=getFilteredRecords();
+        const grid=document.getElementById('qrListGrid');
+        document.getElementById('statTotal').textContent   = allQrRecords.length;
+        document.getElementById('statGood').textContent    = allQrRecords.filter(r=>r.status==='GOOD').length;
+        document.getElementById('statNoGood').textContent  = allQrRecords.filter(r=>r.status==='NO_GOOD').length;
+        document.getElementById('statPending').textContent = allQrRecords.filter(r=>r.status==='PENDING').length;
+        if(filtered.length===0){grid.innerHTML='';document.getElementById('qrListEmpty').classList.remove('hidden');return;}
+        document.getElementById('qrListEmpty').classList.add('hidden');
+        grid.innerHTML = filtered.map(r=>{
+            const sid = r.qr_uuid.replace(/-/g,'');
+            const sel = selectedQrUuids.has(r.qr_uuid);
+            return `
+            <div class="qr-list-card flex gap-2 items-start ${sel?'qr-list-card--selected':''}">
+                <label class="shrink-0 pt-0.5 cursor-pointer" onclick="event.stopPropagation()">
+                    <input type="checkbox" class="checkbox checkbox-sm qr-list-select-chk border-base-300" data-uuid="${r.qr_uuid}" ${sel?'checked':''}/>
+                </label>
+                <div class="flex-1 min-w-0 qr-list-card-open" onclick="openQrDetail('${r.qr_uuid}')">
+                <div class="flex items-start gap-3">
+                    <div class="mini-qr" id="mini-${sid}"></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-bold text-sm text-base-content truncate">${r.item}</p>
+                        <p class="text-xs text-base-content/60 truncate">${r.part_name} · ${r.part_maker}</p>
+                        <p class="text-xs text-base-content/50 mt-0.5">Lot: ${r.lot_no}</p>
+                        <div class="mt-2 flex items-center justify-between gap-1">
+                            ${statusBadgeHtml(r.status)}
+                            <span class="text-xs text-base-content/30 font-mono">${r.qr_uuid.substring(0,8)}…</span>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>`;
+        }).join('');
+        setTimeout(()=>{
+            filtered.forEach(r=>{
+                const el=document.getElementById(`mini-${r.qr_uuid.replace(/-/g,'')}`);
+                if(!el||el.dataset.rendered) return;
+                el.dataset.rendered='1';
+                try{ new QRCode(el,{text:JSON.stringify(r.qr_data),width:76,height:76,colorDark:"#000000",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+            });
+        },60);
+    }
+
+    function openQrDetail(uuid) {
+        const r=allQrRecords.find(x=>x.qr_uuid===uuid);
+        if(!r) return;
+        activeDetailRecord=r;
+        document.getElementById('detailItem').textContent      = r.item;
+        document.getElementById('detailPart').textContent      = r.part_name;
+        document.getElementById('detailMaker').textContent     = r.part_maker;
+        document.getElementById('detailLotNo').textContent     = r.lot_no;
+        document.getElementById('detailUuid').textContent      = r.qr_uuid;
+        document.getElementById('detailCreatedAt').textContent = r.created_at?new Date(r.created_at).toLocaleString():'N/A';
+        document.getElementById('detailStatusBadge').innerHTML = statusBadgeHtml(r.status);
+        const c=document.getElementById('detailQrCanvas'); c.innerHTML='';
+        setTimeout(()=>{ try{new QRCode(c,{text:JSON.stringify(r.qr_data),width:176,height:176,colorDark:"#000000",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H});}catch(e){} },40);
+        document.getElementById('qrDetailModal').showModal();
+    }
+
+    async function fetchTotalQrCount() {
+        try {
+            const response = await fetch(LIST_QR_URL, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const records = Array.isArray(data) ? data : (data.qr_records || data.records || data.data || []);
+                document.getElementById('totalQrCount').textContent = records.length;
+            }
+        } catch (error) {
+            console.error('Failed to fetch QR count:', error);
+        }
+    }
+
+    document.getElementById('detailDownloadBtn')?.addEventListener('click',()=>{
+        if(!activeDetailRecord) return;
+        setTimeout(()=>{
+            const c=document.getElementById('detailQrCanvas');
+            const cv=c.querySelector('canvas'), im=c.querySelector('img');
+            const a=document.createElement('a'); a.download=`QR_${activeDetailRecord.qr_uuid.substring(0,8)}.png`;
+            a.href=cv?cv.toDataURL('image/png'):im?.src||''; a.click();
+        },150);
+    });
+
+    document.getElementById('detailPrintBtn')?.addEventListener('click',()=>{
+        if(!activeDetailRecord) return;
+        const r=activeDetailRecord;
+        const c=document.getElementById('detailQrCanvas').querySelector('canvas');
+        const img=c?c.toDataURL('image/png'):'';
+        runQrLabelPrint(buildQrLabelPrintHtml(r.item,r.part_name,r.part_maker,r.lot_no,r.qr_uuid,img));
+    });
+
+    document.getElementById('detailCopyDataBtn')?.addEventListener('click',()=>{
+        if(!activeDetailRecord) return;
+        navigator.clipboard.writeText(JSON.stringify(activeDetailRecord.qr_data,null,2));
+        const b=document.getElementById('detailCopyDataBtn'); b.innerHTML='<i class="fas fa-check"></i> Copied!';
+        setTimeout(()=>{b.innerHTML='<i class="fas fa-copy"></i> Copy QR Data';},2000);
+    });
+
+    document.getElementById('refreshQrListBtn')?.addEventListener('click', fetchQrList);
+    document.getElementById('retryQrListBtn')?.addEventListener('click', fetchQrList);
+
+    const debouncedRenderQrList = debounce(() => renderQrList(), 200);
+    document.getElementById('qrListSearch')?.addEventListener('input', debouncedRenderQrList);
+    document.getElementById('qrListStatusFilter')?.addEventListener('change', () => renderQrList());
+    document.getElementById('qrListSortBy')?.addEventListener('change', () => renderQrList());
+    document.getElementById('qrListGrid')?.addEventListener('change', (e) => {
+        const chk = e.target.closest('.qr-list-select-chk');
+        if (!chk) return;
+        const id = chk.getAttribute('data-uuid');
+        if (!id) return;
+        if (chk.checked) selectedQrUuids.add(id);
+        else selectedQrUuids.delete(id);
+        const card = chk.closest('.qr-list-card');
+        if (card) {
+            if (chk.checked) card.classList.add('qr-list-card--selected');
+            else card.classList.remove('qr-list-card--selected');
+        }
+        updateQrListSelectionUi();
+    });
+    document.getElementById('selectAllFilteredQrBtn')?.addEventListener('click', () => {
+        const filtered = getFilteredRecords();
+        if (!filtered.length) return;
+        const allOn = filtered.every((r) => selectedQrUuids.has(r.qr_uuid));
+        if (allOn) filtered.forEach((r) => selectedQrUuids.delete(r.qr_uuid));
+        else filtered.forEach((r) => selectedQrUuids.add(r.qr_uuid));
+        renderQrList();
+        updateQrListSelectionUi();
+    });
+    document.getElementById('clearQrSelectionBtn')?.addEventListener('click', () => {
+        selectedQrUuids.clear();
+        renderQrList();
+        updateQrListSelectionUi();
+    });
+    document.getElementById('printSelectedQrBtn')?.addEventListener('click', () => printSelectedQrBatch());
+    document.getElementById("refreshLogsBtn")?.addEventListener("click", fetchBackendLogsForRecentTable);
+    document.getElementById("verificationLogSearch")?.addEventListener("input", () => renderVerificationLogsTable());
+    document.getElementById("verificationFilterDateFrom")?.addEventListener("change", () => renderVerificationLogsTable());
+    document.getElementById("verificationFilterDateTo")?.addEventListener("change", () => renderVerificationLogsTable());
+    document.getElementById("verificationClearFiltersBtn")?.addEventListener("click", clearVerificationFilters);
+    document.getElementById("downloadLogsExcelBtn")?.addEventListener("click", downloadVerificationLogsForDay);
+    initVerificationStatusDropdown();
+    syncVerificationStatusLabel();
+    const exportLogsDateInput = document.getElementById("exportLogsDate");
+    if (exportLogsDateInput && !exportLogsDateInput.value) {
+        exportLogsDateInput.value = getTodayForInput();
+    }
+
+    setTimeout(() => {
+        fetchBackendLogsForRecentTable();
+        fetchTotalQrCount();
+    }, 1200);
+
+    const VIEWS = ['dashboardView','generateQrView','qrListView'];
+    const LINKS = ['dashboardLink','generateQrLink','qrListLink'];
+    const BASE_LINK_CLS   = 'flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200';
+    const ACTIVE_LINK_CLS = 'flex items-center gap-3 px-4 py-3 rounded-lg bg-primary text-primary-content font-medium';
+
+    function setActiveView(viewId, linkId) {
+        VIEWS.forEach(v=>document.getElementById(v)?.classList.add('hidden'));
+        document.getElementById(viewId)?.classList.remove('hidden');
+        LINKS.forEach(l=>{ const el=document.getElementById(l); if(el)el.className=BASE_LINK_CLS; });
+        const al=document.getElementById(linkId);
+        if(al){ al.className=ACTIVE_LINK_CLS; const b=document.getElementById('qrListBadge'); if(b)al.appendChild(b); }
+    }
+
+    function openUserInputModal() {
+        ['modalItemName','modalPartName','modalPartMaker','modalLotNo'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = "";
+        });
+        document.getElementById("modalInputError").innerText = "";
+        verifySelectedIdx = null;
+        const vs = document.getElementById("verifyMasterSearch");
+        if (vs) vs.value = "";
+        document.getElementById("userInputModal").showModal();
+        loadVerifyMasterList();
+    }
+    function closeUserInputModal(){document.getElementById("userInputModal").close();}
+    function onConfirmUserInput(){
+        const item=document.getElementById("modalItemName").value.trim(), part=document.getElementById("modalPartName").value.trim(), maker=document.getElementById("modalPartMaker").value.trim(), lot=document.getElementById("modalLotNo").value.trim();
+        if(!item||!part||!maker){document.getElementById("modalInputError").innerText="Item, part, and maker are required.";return;}
+        pendingUserInput={item_name:item,part_name:part,part_maker:maker,lot_no:lot};
+        closeUserInputModal();
+        document.getElementById("summaryDetails").innerHTML=`<span class="font-semibold">Item:</span><span>${item}</span><span class="font-semibold">Part:</span><span>${part}</span><span class="font-semibold">Maker:</span><span>${maker}</span><span class="font-semibold">Lot:</span><span>${lot||"—"}</span>`;
+        document.getElementById("qrScannerModal").showModal();
+        setTimeout(()=>startQrScanner(),200);
+    }
+    function closeQRModal(){stopQrScanner();document.getElementById("qrScannerModal").close();document.getElementById("verification-result").classList.add("hidden");document.getElementById("scan-status").classList.add("hidden");isProcessing=false;}
+
+    document.getElementById("dashboardLink") ?.addEventListener("click", e=>{e.preventDefault();setActiveView('dashboardView','dashboardLink');closeSidebar();});
+    document.getElementById("generateQrLink")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        setActiveView("generateQrView", "generateQrLink");
+        closeSidebar();
+        loadMasterListForQr();
+    });
+    document.getElementById("qrVerifyLink")  ?.addEventListener("click", e=>{e.preventDefault();openUserInputModal();closeSidebar();});
+    document.getElementById("qrListLink")    ?.addEventListener("click", e=>{e.preventDefault();setActiveView('qrListView','qrListLink');fetchQrList();closeSidebar();});
+    document.getElementById("inventoryLink") ?.addEventListener("click", e=>{e.preventDefault();alert("Inventory module coming soon");});
+    document.getElementById("confirmUserInputBtn")?.addEventListener("click", onConfirmUserInput);
+    document.getElementById("cancelUserInputBtn") ?.addEventListener("click", closeUserInputModal);
+    document.getElementById("restartScannerBtn")  ?.addEventListener("click", ()=>{if(document.getElementById("qrScannerModal").open)restartScanner();});
+    document.getElementById("stopScannerBtn")     ?.addEventListener("click", ()=>{if(document.getElementById("qrScannerModal").open)stopQrScanner();});
+    document.getElementById("scanImageFallbackBtn")?.addEventListener("click", () => {
+        document.getElementById("scanImageFallbackInput")?.click();
+    });
+    document.getElementById("scanImageFallbackInput")?.addEventListener("change", async (event) => {
+        const file = event.target?.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        await scanQrFromImageFile(file);
+    });
+    document.getElementById("qrScannerModal")     ?.addEventListener("close", ()=>stopQrScanner());
+
+    function toggleSidebar(){
+        const s=document.getElementById('sidebar'),o=document.getElementById('overlay');
+        if(window.innerWidth<1024){if(s.classList.contains('-translate-x-full')){s.classList.remove('-translate-x-full');o.classList.remove('hidden');}else{s.classList.add('-translate-x-full');o.classList.add('hidden');}}
+    }
+    function closeSidebar(){
+        const s=document.getElementById('sidebar'),o=document.getElementById('overlay');
+        if(window.innerWidth<1024){s.classList.add('-translate-x-full');o.classList.add('hidden');}
+    }
+    document.getElementById('menuBtn')?.addEventListener('click',toggleSidebar);
+    window.addEventListener('resize',()=>{
+        const s=document.getElementById('sidebar'),o=document.getElementById('overlay');
+        if(window.innerWidth>=1024){s.classList.remove('-translate-x-full');o.classList.add('hidden');}
+        else{s.classList.add('-translate-x-full');o.classList.add('hidden');}
+    });
+
+    debugLog('INFO', 'QR System Ready — with enhanced QR scanning for JSON format');
+    debugLog('INFO', 'Expected QR format: {"qr_uuid":"...", "item":"...", "part":{"name":"...","maker":"..."}, "lot_no":"..."}');
+    console.log('%c📱 Open the browser console (F12) to see QR scan debugging information', 'color: #3b82f6; font-size: 12px;');
+    console.log('%c🎯 Expected QR format: {"qr_uuid":"...", "item":"...", "part":{"name":"...","maker":"..."}, "lot_no":"..."}', 'color: #f59e0b; font-size: 11px;');
+    console.log('%c⚠️ If you see numeric values (like 02577906), the scanner is only reading part of the QR code', 'color: #ef4444; font-size: 11px;');
+    console.log('%c💡 Tips: Move camera farther away, ensure good lighting, clean lens, make sure entire QR is in frame', 'color: #f97316; font-size: 11px;');
+    </script>
+</body>
+</html>

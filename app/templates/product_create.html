@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Product</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+        }
+        input {
+            margin-bottom: 15px;
+            padding: 8px;
+            width: 200px;
+        }
+        button {
+            padding: 10px 15px;
+        }
+        table {
+            margin-top: 20px;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .process-entry {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Create Product</h1>
+    <form id="productForm">
+        <label for="item_code">Item Code:</label>
+        <input type="text" id="item_code" name="item_code" required maxlength="7">
+
+        <label for="part_no">Part No:</label>
+        <input type="text" id="part_no" name="part_no" required>
+
+        <div id="processContainer">
+            <label for="process_code">Process Code:</label>
+            <input type="text" id="process_code" name="process_code" placeholder="Enter Process Code">
+            
+            <label for="process_name">Process Name:</label>
+            <input type="text" id="process_name" name="process_name" placeholder="Enter Process Name">
+            
+            <button type="button" id="addProcessBtn">Add Process</button>
+        </div>
+
+        <label for="customer">Customer:</label>
+        <input type="text" id="customer" name="customer" required>
+
+        <label for="product_family">Product Family:</label>
+        <input type="text" id="product_family" name="product_family" required>
+
+        <button type="submit">Create Product</button>
+    </form>
+
+    <h2>Processes</h2>
+    <ul id="processList"></ul>
+
+    <table id="productTable" style="display:none;">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Key</th>
+            </tr>
+        </thead>
+        <tbody id="productDetails"></tbody>
+    </table>
+
+    <script>
+        const processList = []; // Store the process list
+    
+        document.getElementById('addProcessBtn').addEventListener('click', function() {
+            const processCode = document.getElementById('process_code').value;
+            const processName = document.getElementById('process_name').value;
+            
+            // Use required fields in the HTML input itself to ensure both values are entered
+            if (processCode && processName) {
+                // Create an object with processCode as the key and processName as the value
+                const processObject = {};
+                processObject[processCode] = processName;
+        
+                // Push this object to the processList
+                processList.push(processObject);
+        
+                // Display the process list
+                displayProcessList();
+                console.log(processCode);
+                console.log(processName);
+                
+                // Clear the inputs for the next entry
+                document.getElementById('process_code').value = '';
+                document.getElementById('process_name').value = '';
+            }
+        });
+        
+        function displayProcessList() {
+            const processListElement = document.getElementById('processList');
+            processListElement.innerHTML = ''; // Clear current process list
+        
+            processList.forEach((process, index) => {
+                const li = document.createElement('li');
+                // Display both process code and process name
+                for (let code in process) {
+                    li.textContent = `Process Code: ${code} | Process Name: ${process[code]}`;
+                }
+                processListElement.appendChild(li);
+        
+                // Optional: Log the process in the console for debugging
+                console.log(`create:${index + 1} ${Object.keys(process)[0]}`);
+            });
+        }
+        
+        document.getElementById('productForm').addEventListener('submit', async function(event) {
+            event.preventDefault(); // Prevent the default form submission
+        
+            const item_code = document.getElementById('item_code').value;
+            const part_no = document.getElementById('part_no').value;
+            const customer = document.getElementById('customer').value;
+            const product_family = document.getElementById('product_family').value;
+        
+            const data = {
+                item_code: item_code,
+                part_no: part_no,
+                process: processList, // Send the list of processes
+                customer: customer,
+                product_family: product_family
+            };
+        
+            try {
+                // Log the request data
+                console.log('Request Data:', JSON.stringify(data));
+            
+                // Make the API call to create the product
+                const response = await fetch('/api/item', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+            
+                const result = await response.json();
+                console.log('API Response:', result); // Log the entire response
+            
+                // Check if the product was created successfully
+                if (response.ok) {
+                    if (result && typeof result === 'object') {
+                        displayProductDetails(result); // Pass the result to displayProductDetails
+                    } else {
+                        // Handle invalid response from server
+                        console.error('Invalid response from server.');
+                    }
+                } else {
+                    // Handle error response
+                    console.error('An error occurred while creating the product.');
+                }
+            } catch (error) {
+                console.error('Error creating product:', error);
+            }
+        });
+        
+        function displayProductDetails(product) {
+            const productTable = document.getElementById('productTable');
+            const productDetails = document.getElementById('productDetails');
+            productDetails.innerHTML = ''; // Clear previous details
+        
+            // Log product details for debugging
+            console.log('Displaying Product Details:', product);
+        
+            // Create table rows for each key-value pair except for the process
+            for (const [key, value] of Object.entries(product)) {
+                if (key !== 'process') { // Skip the process field for this table
+                    const row = document.createElement('tr');
+                    const valueCell = document.createElement('td');
+                    const keyCell = document.createElement('td');
+        
+                    valueCell.textContent = value;
+                    keyCell.textContent = key;
+        
+                    row.appendChild(valueCell);
+                    row.appendChild(keyCell);
+                    productDetails.appendChild(row);
+                }
+            }
+        
+            // Check if the 'process' array exists and has items
+            console.log('Product Process Array:', product.process);
+        
+            if (Array.isArray(product.process) && product.process.length > 0) {
+                const processTable = document.createElement('table');
+                processTable.style.marginTop = '20px';
+                processTable.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Process Code</th>
+                            <th>Process Name</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                `;
+                const processBody = processTable.querySelector('tbody');
+        
+                // Create table rows for each process
+                product.process.forEach(proc => {
+                    console.log('Creating Row for Process:', proc); // Log each process for debugging
+                    const row = document.createElement('tr');
+                    const codeCell = document.createElement('td');
+                    const nameCell = document.createElement('td');
+        
+                     // Iterate over keys (process codes)
+                    const processCodes = Object.keys(proc);  // Get the keys (process codes)
+                    processCodes.forEach(processCode => {
+                        console.log('Process Code:', processCode); // Logs process code like 'E151'
+                        codeCell.textContent = processCode;  // Set the process code in the table cell
+                    });
+
+                    // Iterate over values (process names)
+                    const processNames = Object.values(proc);  // Get the values (process names)
+                    processNames.forEach(processName => {
+                        console.log('Process Name:', processName); // Logs process name like 'Winding Wire'
+                        nameCell.textContent = processName;  // Set the process name in the table cell
+                    });
+
+                    // Append cells to the row and the row to the table
+                    row.appendChild(codeCell);
+                    row.appendChild(nameCell);
+                    processBody.appendChild(row);
+                });
+        
+                // Append the process table to the product table
+                productTable.appendChild(processTable);
+            } else {
+                console.log('No processes found to display.');
+            }
+        
+            // Make sure the productTable is visible after appending the process table
+            productTable.style.display = 'table';
+        
+            // Reset the process list and clear the displayed processes
+            processList.length = 0; // Clear the process list
+            displayProcessList(); // Update the UI to reflect the cleared process list
+        
+            // Optionally clear the input fields for process code and name
+            document.getElementById('process_code').value = '';
+            document.getElementById('process_name').value = '';
+        }
+        
+        
+    </script>
+</body>
+</html>

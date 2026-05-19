@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Customer Registration - QR Management System</title>
+    <!-- Tailwind CSS + DaisyUI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- SweetAlert2 for better notifications -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        @keyframes fadeSlide {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-slide {
+            animation: fadeSlide 0.3s ease-out;
+        }
+        .part-card {
+            transition: all 0.2s ease;
+        }
+        .part-card:hover {
+            transform: translateX(4px);
+        }
+        .scrollable-parts {
+            max-height: 320px;
+            overflow-y: auto;
+        }
+        .scrollable-parts::-webkit-scrollbar {
+            width: 6px;
+        }
+        .scrollable-parts::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 8px;
+        }
+        .scrollable-parts::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 8px;
+        }
+        .toast-success {
+            animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .bulk-upload-file-input {
+            border: 2px solid #111827 !important;
+        }
+        .bulk-upload-file-input::file-selector-button {
+            border-right: 2px solid #111827 !important;
+            background: #f8fafc !important;
+            color: #111827 !important;
+            font-weight: 600;
+        }
+        .bulk-upload-file-input::-webkit-file-upload-button {
+            border-right: 2px solid #111827 !important;
+            background: #f8fafc !important;
+            color: #111827 !important;
+            font-weight: 600;
+        }
+        .bulk-upload-btn {
+            border: 2px solid #111827 !important;
+            box-shadow: none !important;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50 min-h-screen">
+
+    <!-- Navigation Bar -->
+    <div class="navbar bg-white shadow-md sticky top-0 z-30 px-4 md:px-8">
+        <div class="flex-1">
+            <a href="/dashboard" class="btn btn-ghost text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                <i class="fas fa-qrcode text-blue-500 mr-2"></i> QR Management System
+            </a>
+        </div>
+        <div class="flex-none gap-2">
+            <a href="/dashboard" class="btn btn-outline btn-sm gap-2">
+                <i class="fas fa-tachometer-alt"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container mx-auto px-4 py-8 max-w-5xl">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-4">
+                <i class="fas fa-user-plus text-3xl text-blue-600"></i>
+            </div>
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Customer Registration</h1>
+            <p class="text-gray-500">Register customers, add items, and define part specifications</p>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-blue-100 shadow-md p-4 md:p-5 mb-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div>
+                    <h2 class="text-base md:text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <i class="fas fa-file-upload text-blue-600"></i> Bulk Upload (CSV/Excel)
+                    </h2>
+                    <p class="text-xs text-gray-500 mt-1">
+                        Mapping used: <code>1st column = Customer Name</code>, <code>PartCode = Item</code>,
+                        <code>MaterialsCode = Part</code>, <code>Maker = Maker</code>.
+                        You can still use manual input below.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <input id="bulkCustomerFileInput" type="file" accept=".csv,.xlsx" class="file-input file-input-bordered file-input-sm w-full md:w-72 bulk-upload-file-input">
+                    <button id="bulkCustomerUploadBtn" type="button" class="btn btn-primary btn-sm gap-2 bulk-upload-btn">
+                        <i class="fas fa-upload"></i> Upload File
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Steps -->
+        <div class="flex justify-center mb-10">
+            <ul class="steps steps-horizontal w-full max-w-3xl">
+                <li id="step1Indicator" class="step step-primary font-medium">Create Customer</li>
+                <li id="step2Indicator" class="step">Add Item</li>
+                <li id="step3Indicator" class="step">Add Parts</li>
+            </ul>
+        </div>
+
+        <!-- Main Form Card -->
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+            <div class="p-6 md:p-8">
+                <!-- ==================== STEP 1: CREATE CUSTOMER ==================== -->
+                <div id="step1" class="space-y-6 fade-slide">
+                    <div class="flex items-center gap-3 pb-3 border-b border-gray-200">
+                        <div class="bg-blue-100 p-2 rounded-xl">
+                            <i class="fas fa-building text-blue-600 text-xl"></i>
+                        </div>
+                        <h2 class="text-2xl font-bold text-gray-800">Create New Customer</h2>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 gap-5">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text font-semibold">
+                                    <i class="fas fa-user text-blue-500 mr-1"></i> Customer Name <span class="text-red-500">*</span>
+                                </span>
+                            </label>
+                            <input type="text" id="customerName" placeholder="e.g., Toyota Motors, Samsung Electronics" 
+                                   class="input input-bordered w-full focus:ring-2 focus:ring-blue-300" autocomplete="off">
+                            <p class="text-xs text-gray-500 mt-1">This will create a new customer record in the system</p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 mt-2">
+                        <p class="text-sm text-blue-700 flex items-center gap-2">
+                            <i class="fas fa-info-circle"></i>
+                            After creating the customer, you'll be able to add items and parts
+                        </p>
+                    </div>
+                    
+                    <div class="flex justify-end mt-6">
+                        <button id="createCustomerBtn" type="button" class="btn btn-primary px-8 gap-2 shadow-md">
+                            Create Customer <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ==================== STEP 2: ADD ITEM TO CUSTOMER ==================== -->
+                <div id="step2" class="hidden space-y-6 fade-slide">
+                    <div class="flex items-center gap-3 pb-3 border-b border-gray-200">
+                        <div class="bg-amber-100 p-2 rounded-xl">
+                            <i class="fas fa-box text-amber-600 text-xl"></i>
+                        </div>
+                        <h2 class="text-2xl font-bold text-gray-800">Add Item to Customer</h2>
+                    </div>
+                    
+                    <!-- Customer Info Display -->
+                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200">
+                        <p class="font-semibold text-green-800 mb-2">
+                            <i class="fas fa-check-circle"></i> Customer Created Successfully:
+                        </p>
+                        <p class="text-lg font-bold text-gray-800" id="displayCustomerName">—</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 gap-5">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text font-semibold">
+                                    <i class="fas fa-tag text-amber-500 mr-1"></i> Item Name <span class="text-red-500">*</span>
+                                </span>
+                            </label>
+                            <input type="text" id="itemName" placeholder="e.g., Electric Vehicle Battery, Smart Display" 
+                                   class="input input-bordered w-full">
+                            <p class="text-xs text-gray-500 mt-1">This item will be added to the customer's product list</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-between mt-6">
+                        <button id="backToStep1Btn" type="button" class="btn btn-outline gap-2">
+                            <i class="fas fa-chevron-left"></i> Back
+                        </button>
+                        <button id="addItemBtn" type="button" class="btn btn-primary gap-2 shadow-md">
+                            Add Item <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ==================== STEP 3: ADD PARTS TO ITEM ==================== -->
+                <div id="step3" class="hidden space-y-6 fade-slide">
+                    <div class="flex items-center gap-3 pb-3 border-b border-gray-200">
+                        <div class="bg-purple-100 p-2 rounded-xl">
+                            <i class="fas fa-microchip text-purple-600 text-xl"></i>
+                        </div>
+                        <h2 class="text-2xl font-bold text-gray-800">Add Parts to Item</h2>
+                    </div>
+                    
+                    <!-- Summary Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-200">
+                            <p class="text-sm text-gray-600 mb-1">Customer</p>
+                            <p class="font-bold text-gray-800" id="step3CustomerName">—</p>
+                        </div>
+                        <div class="bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-xl border border-amber-200">
+                            <p class="text-sm text-gray-600 mb-1">Item</p>
+                            <p class="font-bold text-gray-800" id="step3ItemName">—</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Add Part Section -->
+                    <div class="flex flex-col lg:flex-row gap-5">
+                        <div class="lg:flex-1 bg-gray-50 p-5 rounded-xl border border-gray-200">
+                            <h3 class="font-bold text-gray-700 mb-3">
+                                <i class="fas fa-plus-circle text-green-500 mr-1"></i> Add New Part
+                            </h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Part Name <span class="text-red-500">*</span></label>
+                                    <input type="text" id="partName" placeholder="e.g., Main Processor, Cooling Fan" 
+                                           class="input input-bordered w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Maker / Manufacturer <span class="text-red-500">*</span></label>
+                                    <input type="text" id="maker" placeholder="e.g., Texas Instruments, Foxconn" 
+                                           class="input input-bordered w-full">
+                                </div>
+                                <button id="addPartBtn" type="button" disabled class="btn btn-primary w-full mt-2 gap-2">
+                                    <i class="fas fa-plus"></i> Add Part
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Parts List -->
+                        <div class="lg:flex-1 border border-gray-200 rounded-xl p-4 bg-white">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="font-bold text-gray-700">
+                                    <i class="fas fa-list-ul text-indigo-500 mr-1"></i> Parts List (<span id="partsCount">0</span>)
+                                </h3>
+                                <button id="clearAllParts" type="button" class="btn btn-xs btn-ghost text-red-500 hover:bg-red-50">
+                                    <i class="fas fa-trash-alt"></i> Clear all
+                                </button>
+                            </div>
+                            <div id="partsList" class="scrollable-parts space-y-2 pr-1">
+                                <div class="text-center text-gray-400 py-8 text-sm">
+                                    <i class="fas fa-cogs text-3xl mb-2 block"></i>
+                                    No parts added yet
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-between mt-6">
+                        <button id="backToStep2Btn" type="button" class="btn btn-outline gap-2">
+                            <i class="fas fa-chevron-left"></i> Back
+                        </button>
+                        <button id="submitPartsBtn" type="button" disabled class="btn btn-success gap-2 shadow-md px-8">
+                            <i class="fas fa-check-circle"></i> Complete Registration
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Configuration
+        const API_BASE_URL = window.location.origin;
+        const BULK_CUSTOMERS_UPLOAD_URL = `${API_BASE_URL}/api/bulk-upload/customers`;
+        
+        // Data storage
+        let currentCustomerName = '';
+        let currentItemName = '';
+        let partsArray = [];
+        let currentStep = 1;
+
+        // DOM Elements
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        const step3 = document.getElementById('step3');
+        const step1Ind = document.getElementById('step1Indicator');
+        const step2Ind = document.getElementById('step2Indicator');
+        const step3Ind = document.getElementById('step3Indicator');
+
+        // Step 1 Elements
+        const customerNameInput = document.getElementById('customerName');
+        const createCustomerBtn = document.getElementById('createCustomerBtn');
+
+        // Step 2 Elements
+        const itemNameInput = document.getElementById('itemName');
+        const addItemBtn = document.getElementById('addItemBtn');
+        const displayCustomerName = document.getElementById('displayCustomerName');
+        const backToStep1Btn = document.getElementById('backToStep1Btn');
+
+        // Step 3 Elements
+        const partNameInput = document.getElementById('partName');
+        const makerInput = document.getElementById('maker');
+        const addPartBtn = document.getElementById('addPartBtn');
+        const partsListContainer = document.getElementById('partsList');
+        const partsCount = document.getElementById('partsCount');
+        const clearAllParts = document.getElementById('clearAllParts');
+        const submitPartsBtn = document.getElementById('submitPartsBtn');
+        const backToStep2Btn = document.getElementById('backToStep2Btn');
+        const step3CustomerName = document.getElementById('step3CustomerName');
+        const step3ItemName = document.getElementById('step3ItemName');
+        const bulkCustomerFileInput = document.getElementById('bulkCustomerFileInput');
+        const bulkCustomerUploadBtn = document.getElementById('bulkCustomerUploadBtn');
+
+        // Show loading overlay
+        function showLoadingOverlay(message = 'Processing...') {
+            Swal.fire({
+                title: message,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                willOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+        }
+
+        function hideLoadingOverlay() {
+            Swal.close();
+        }
+
+        // Show success notification
+        function showSuccessNotification(title, message) {
+            Swal.fire({
+                icon: 'success',
+                title: title,
+                text: message,
+                timer: 3000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end',
+                background: '#10b981',
+                color: 'white',
+                iconColor: 'white',
+                customClass: {
+                    popup: 'toast-success'
+                }
+            });
+        }
+
+        // Show error notification
+        function showErrorNotification(title, message) {
+            Swal.fire({
+                icon: 'error',
+                title: title,
+                text: message,
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#ef4444'
+            });
+        }
+
+        async function uploadBulkCustomerFile() {
+            const file = bulkCustomerFileInput?.files?.[0];
+            if (!file) {
+                showErrorNotification('Validation Error', 'Please choose a CSV or Excel file first.');
+                return;
+            }
+            const confirmUpload = await Swal.fire({
+                icon: 'question',
+                title: 'Confirm upload',
+                text: `Upload file "${file.name}" now?`,
+                showCancelButton: true,
+                confirmButtonText: 'Yes, upload',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#2563eb',
+                cancelButtonColor: '#6b7280'
+            });
+            if (!confirmUpload.isConfirmed) return;
+
+            const fd = new FormData();
+            fd.append('file', file);
+            bulkCustomerUploadBtn.disabled = true;
+            const originalBtn = bulkCustomerUploadBtn.innerHTML;
+            bulkCustomerUploadBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Uploading...';
+
+            try {
+                const resp = await fetch(BULK_CUSTOMERS_UPLOAD_URL, { method: 'POST', body: fd });
+                const data = await resp.json();
+                if (!resp.ok || data.error) throw new Error(data.error || 'Bulk upload failed');
+
+                const summary = `Rows read: ${data.rows_read || 0}\nCreated customers: ${data.created_customers || 0}\nCreated items: ${data.created_items || 0}\nCreated parts: ${data.created_parts || 0}\nSkipped: ${data.skipped_count || 0}`;
+                showSuccessNotification('Bulk Upload Completed', summary);
+                if (bulkCustomerFileInput) bulkCustomerFileInput.value = '';
+            } catch (err) {
+                showErrorNotification('Bulk Upload Failed', err.message || 'Upload failed');
+            } finally {
+                bulkCustomerUploadBtn.disabled = false;
+                bulkCustomerUploadBtn.innerHTML = originalBtn;
+            }
+        }
+
+        // Step 1: Create Customer
+        async function createCustomer() {
+            const customerName = customerNameInput.value.trim();
+            
+            if (!customerName) {
+                showErrorNotification('Validation Error', 'Please enter a customer name');
+                return;
+            }
+            
+            showLoadingOverlay('Creating customer...');
+            
+            try {
+                const payload = {
+                    customer_name: customerName,
+                    items: []
+                };
+                
+                const response = await fetch(`${API_BASE_URL}/api/customers`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    // Handle duplicate customer error
+                    if (data.error && data.error.includes('already exists')) {
+                        throw new Error(`Customer "${customerName}" already exists! Please use a different name.`);
+                    }
+                    throw new Error(data.error || 'Failed to create customer');
+                }
+                
+                // Success - show notification
+                showSuccessNotification('Customer Created!', `Customer "${customerName}" has been successfully registered.`);
+                
+                // Move to Step 2
+                currentCustomerName = customerName;
+                displayCustomerName.textContent = currentCustomerName;
+                hideLoadingOverlay();
+                
+                // Transition to Step 2
+                step1.classList.add('hidden');
+                step2.classList.remove('hidden');
+                step1Ind.classList.remove('step-primary');
+                step2Ind.classList.add('step-primary');
+                currentStep = 2;
+                
+                // Clear item input
+                itemNameInput.value = '';
+                
+            } catch (err) {
+                console.error('Create customer error:', err);
+                hideLoadingOverlay();
+                showErrorNotification('Registration Failed', err.message);
+            }
+        }
+
+        // Step 2: Add Item to Customer
+        async function addItemToCustomer() {
+            const itemName = itemNameInput.value.trim();
+            
+            if (!itemName) {
+                showErrorNotification('Validation Error', 'Please enter an item name');
+                return;
+            }
+            
+            showLoadingOverlay('Adding item to customer...');
+            
+            try {
+                const payload = {
+                    item: itemName,
+                    partnames: []
+                };
+                
+                const response = await fetch(`${API_BASE_URL}/api/customers/${encodeURIComponent(currentCustomerName)}/items/add-item`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    // Handle duplicate item error
+                    if (data.error && data.error.includes('already exists')) {
+                        throw new Error(`Item "${itemName}" already exists for customer "${currentCustomerName}"!`);
+                    }
+                    throw new Error(data.error || 'Failed to add item');
+                }
+                
+                // Success - show notification
+                showSuccessNotification('Item Added!', `Item "${itemName}" has been successfully added to ${currentCustomerName}.`);
+                
+                // Move to Step 3
+                currentItemName = itemName;
+                step3CustomerName.textContent = currentCustomerName;
+                step3ItemName.textContent = currentItemName;
+                hideLoadingOverlay();
+                
+                // Transition to Step 3
+                step2.classList.add('hidden');
+                step3.classList.remove('hidden');
+                step2Ind.classList.remove('step-primary');
+                step3Ind.classList.add('step-primary');
+                currentStep = 3;
+                
+                // Reset parts array and UI
+                partsArray = [];
+                renderPartsList();
+                validatePartFields();
+                validatePartsSubmit();
+                
+                // Clear part inputs
+                partNameInput.value = '';
+                makerInput.value = '';
+                
+            } catch (err) {
+                console.error('Add item error:', err);
+                hideLoadingOverlay();
+                showErrorNotification('Failed to Add Item', err.message);
+            }
+        }
+
+        // Step 3: Add Parts Functions
+        function validatePartFields() {
+            const isValid = partNameInput.value.trim() !== '' && makerInput.value.trim() !== '';
+            addPartBtn.disabled = !isValid;
+            return isValid;
+        }
+
+        function addPart(event) {
+            if (event) event.preventDefault();
+
+            const partName = (partNameInput?.value || '').trim();
+            const makerName = (makerInput?.value || '').trim();
+
+            if (!partName || !makerName) {
+                showErrorNotification('Validation Error', 'Please enter both Part Name and Maker / Manufacturer.');
+                return;
+            }
+
+            const newPart = {
+                part_name: partName,
+                maker: makerName
+            };
+
+            // Check duplicate part name in the current list. Backend also checks existing DB parts.
+            const duplicate = partsArray.some(p =>
+                (p.part_name || '').trim().toLowerCase() === newPart.part_name.toLowerCase()
+            );
+
+            if (duplicate) {
+                showErrorNotification('Duplicate Part', `Part "${newPart.part_name}" is already in the parts list.`);
+                return;
+            }
+
+            partsArray.push(newPart);
+            renderPartsList();
+            validatePartsSubmit();
+
+            partNameInput.value = '';
+            makerInput.value = '';
+            validatePartFields();
+            partNameInput.focus();
+
+            showSuccessNotification('Part Added!', `Part "${newPart.part_name}" (${newPart.maker}) has been added to the list.`);
+        }
+
+        function renderPartsList() {
+            if (!partsListContainer || !partsCount) return;
+
+            partsCount.innerText = String(partsArray.length);
+
+            if (partsArray.length === 0) {
+                partsListContainer.innerHTML = `
+                    <div class="text-center text-gray-400 py-8 text-sm">
+                        <i class="fas fa-cogs text-3xl mb-2 block"></i>
+                        No parts added yet
+                    </div>
+                `;
+                return;
+            }
+
+            partsListContainer.innerHTML = partsArray.map((part, idx) => `
+                <div class="part-card bg-white rounded-lg p-3 border border-gray-200 flex justify-between items-center hover:shadow-sm transition">
+                    <div class="flex-1 min-w-0">
+                        <div class="font-semibold text-gray-800 break-words">${escapeHtml(part.part_name)}</div>
+                        <div class="text-xs text-gray-500 mt-1 break-words">
+                            <i class="fas fa-industry"></i> Maker: ${escapeHtml(part.maker)}
+                        </div>
+                    </div>
+                    <button type="button" onclick="removePart(${idx})" class="btn btn-xs btn-circle btn-ghost text-red-500 hover:bg-red-50">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        window.removePart = function(index) {
+            if (index < 0 || index >= partsArray.length) return;
+            const removedPart = partsArray[index];
+            partsArray.splice(index, 1);
+            renderPartsList();
+            validatePartsSubmit();
+            showSuccessNotification('Part Removed', `Part "${removedPart.part_name}" has been removed.`);
+        };
+
+        function clearAllPartsFunc() {
+            if (partsArray.length > 0 && confirm('Remove all parts?')) {
+                partsArray = [];
+                renderPartsList();
+                validatePartsSubmit();
+                showSuccessNotification('Parts Cleared', 'All parts have been removed from the list.');
+            }
+        }
+
+        function validatePartsSubmit() {
+            const isValid = partsArray.length > 0;
+            submitPartsBtn.disabled = !isValid;
+        }
+
+        // Submit all parts to backend
+        async function submitAllParts() {
+            if (partsArray.length === 0) {
+                showErrorNotification('Validation Error', 'Please add at least one part before completing registration');
+                return;
+            }
+            
+            showLoadingOverlay('Adding parts to item...');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/customers/${encodeURIComponent(currentCustomerName)}/items/${encodeURIComponent(currentItemName)}/parts/add`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(partsArray)
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    // Handle duplicate part error from backend
+                    if (data.error && data.error.includes('already exists')) {
+                        throw new Error(data.error);
+                    }
+                    throw new Error(data.error || 'Failed to add parts');
+                }
+                
+                // Success - show completion modal with all details
+                hideLoadingOverlay();
+                
+                const partDetails = partsArray.map(p => `• ${p.part_name} (${p.maker})`).join('\n');
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: '🎉 Registration Complete!',
+                    html: `
+                        <div class="text-left">
+                            <p class="font-semibold mb-2">Customer: <span class="text-blue-600">${escapeHtml(currentCustomerName)}</span></p>
+                            <p class="font-semibold mb-2">Item: <span class="text-amber-600">${escapeHtml(currentItemName)}</span></p>
+                            <p class="font-semibold mb-2">Parts Added: <span class="text-green-600">${partsArray.length} part(s)</span></p>
+                            <div class="bg-gray-50 p-3 rounded-lg mt-2 max-h-40 overflow-y-auto">
+                                ${partDetails.split('\n').map(line => `<div class="text-sm">${line}</div>`).join('')}
+                            </div>
+                        </div>
+                    `,
+                    confirmButtonText: 'Go to Dashboard',
+                    cancelButtonText: 'Register Another',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3b82f6',
+                    cancelButtonColor: '#6b7280'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        window.location.href = '/dashboard';
+                    } else if (result.dismiss === Swal.DismissReason.cancel) {
+                        resetForm();
+                    }
+                });
+                
+            } catch (err) {
+                console.error('Add parts error:', err);
+                hideLoadingOverlay();
+                showErrorNotification('Failed to Add Parts', err.message);
+            }
+        }
+
+        // Reset entire form
+        function resetForm() {
+            currentCustomerName = '';
+            currentItemName = '';
+            partsArray = [];
+            currentStep = 1;
+            
+            // Clear inputs
+            customerNameInput.value = '';
+            itemNameInput.value = '';
+            partNameInput.value = '';
+            makerInput.value = '';
+            
+            // Reset to Step 1
+            step3.classList.add('hidden');
+            step2.classList.add('hidden');
+            step1.classList.remove('hidden');
+            step1Ind.classList.add('step-primary');
+            step2Ind.classList.remove('step-primary');
+            step3Ind.classList.remove('step-primary');
+            
+            renderPartsList();
+            validatePartFields();
+            validatePartsSubmit();
+            
+            showSuccessNotification('Form Reset', 'You can now register a new customer.');
+        }
+
+        // Navigation between steps (back only)
+        function backToStep1() {
+            step2.classList.add('hidden');
+            step1.classList.remove('hidden');
+            step2Ind.classList.remove('step-primary');
+            step1Ind.classList.add('step-primary');
+            currentStep = 1;
+        }
+        
+        function backToStep2() {
+            step3.classList.add('hidden');
+            step2.classList.remove('hidden');
+            step3Ind.classList.remove('step-primary');
+            step2Ind.classList.add('step-primary');
+            currentStep = 2;
+        }
+
+        // Escape HTML
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        // Event Listeners
+        createCustomerBtn.addEventListener('click', createCustomer);
+        addItemBtn.addEventListener('click', addItemToCustomer);
+        addPartBtn.addEventListener('click', addPart);
+        clearAllParts.addEventListener('click', (e) => { e.preventDefault(); clearAllPartsFunc(); });
+        submitPartsBtn.addEventListener('click', (e) => { e.preventDefault(); submitAllParts(); });
+        backToStep1Btn.addEventListener('click', (e) => { e.preventDefault(); backToStep1(); });
+        backToStep2Btn.addEventListener('click', (e) => { e.preventDefault(); backToStep2(); });
+        bulkCustomerUploadBtn?.addEventListener('click', uploadBulkCustomerFile);
+        
+        partNameInput.addEventListener('input', validatePartFields);
+        makerInput.addEventListener('input', validatePartFields);
+        [partNameInput, makerInput].forEach(input => {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addPart(e);
+                }
+            });
+        });
+        
+        // Initial validation
+        renderPartsList();
+        validatePartFields();
+        validatePartsSubmit();
+        
+        console.log('Customer Registration Page Ready - With comprehensive error handling');
+        console.log('API Endpoints:');
+        console.log('  POST /api/customers');
+        console.log('  PATCH /api/customers/{name}/items/add-item');
+        console.log('  PATCH /api/customers/{name}/items/{item}/parts/add');
+    </script>
+</body>
+</html>

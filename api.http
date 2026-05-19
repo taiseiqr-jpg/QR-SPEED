@@ -1,0 +1,10 @@
+###
+curl -X POST 
+    http://127.0.0.1:8000/api/worker
+-H "Content-Type: application/json"
+-d '{
+    "first_name": "francis",
+    "last_name": "moreto",
+    "employee_id": "2111111",
+    "username" : "francis101"   
+}'

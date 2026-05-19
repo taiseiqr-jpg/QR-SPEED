@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Worker Management System</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    /* Custom scrollbar styling */
+    .scrollable-table {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .scrollable-table::-webkit-scrollbar {
+      width: 8px;
+    }
+    .scrollable-table::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+    .scrollable-table::-webkit-scrollbar-thumb {
+      background: #888;
+      border-radius: 4px;
+    }
+    .scrollable-table::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
+    
+    /* Dropdown styling */
+    .dropdown-container {
+      display: flex;
+      flex-direction: column;
+    }
+    .dropdown-toggle {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      width: 100%;
+      color: white;
+    }
+    .dropdown-toggle:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+    .dropdown-menu {
+      display: none;
+      width: 100%;
+      padding-left: 1.5rem;
+    }
+    .dropdown.active .dropdown-menu {
+      display: block;
+    }
+    .dropdown-item a {
+      display: block;
+      padding: 0.5rem 1rem;
+      color: white;
+    }
+    .dropdown-item a:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+    .dropdown-toggle svg {
+      transition: transform 0.2s ease;
+    }
+    .dropdown.active .dropdown-toggle svg {
+      transform: rotate(180deg);
+    }
+    
+    /* Role badge styling */
+    .role-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .role-admin {
+      background-color: #dc2626;
+      color: white;
+    }
+    .role-user {
+      background-color: #10b981;
+      color: white;
+    }
+    
+    /* Role selection styling */
+    .role-option {
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .role-option.selected {
+      border-color: #3b82f6;
+      background-color: #eff6ff;
+    }
+    
+    /* Animation for status messages */
+    @keyframes fadeOut {
+      0% { opacity: 1; }
+      70% { opacity: 1; }
+      100% { opacity: 0; visibility: hidden; }
+    }
+    
+    .fade-out {
+      animation: fadeOut 3s forwards;
+    }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div class="drawer">
+    <input id="my-drawer" type="checkbox" class="drawer-toggle" />
+    <div class="drawer-content flex flex-col">
+      <!-- Navbar -->
+      <div class="navbar bg-blue-400 shadow-sm mb-4">
+        <div class="flex-none">
+          <label for="my-drawer" class="btn btn-square btn-ghost drawer-button">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block h-5 w-5 stroke-current"> 
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path> 
+            </svg>
+          </label>
+        </div>
+        <div class="flex-1">
+          <a class="font-semibold text-xl">Worker Management System</a>
+        </div>
+      </div>
+
+      <!-- Main content -->
+      <div class="p-5 flex-grow">
+        <div class="flex flex-col lg:flex-row gap-8">
+          <!-- Worker Creation Form (Left Side) -->
+          <div class="flex-1">
+            <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">Create User</h1>
+            
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body">
+                <form id="workerForm">
+                  <div class="form-control">
+                    <label class="label" for="first_name">
+                      <span class="label-text font-bold">First Name</span>
+                    </label>
+                    <input type="text" id="first_name" name="first_name" class="input input-bordered w-full" required>
+                  </div>
+                  
+                  <div class="form-control">
+                    <label class="label" for="last_name">
+                      <span class="label-text font-bold">Last Name</span>
+                    </label>
+                    <input type="text" id="last_name" name="last_name" class="input input-bordered w-full" required>
+                  </div>
+                  
+                  <div class="form-control">
+                    <label class="label" for="employee_id">
+                      <span class="label-text font-bold">Employee ID</span>
+                    </label>
+                    <input type="text" id="employee_id" name="employee_id" class="input input-bordered w-full" required>
+                  </div>
+                  
+                  <div class="form-control">
+                    <label class="label" for="username">
+                      <span class="label-text font-bold">Username</span>
+                    </label>
+                    <input type="text" id="username" name="username" class="input input-bordered w-full" required>
+                  </div>
+                  
+                  <!-- Role Selection - Ask if Admin or User -->
+                  <div class="form-control mt-4">
+                    <label class="label">
+                      <span class="label-text font-bold">Select Role</span>
+                    </label>
+                    <div class="flex gap-4">
+                      <div id="roleUser" class="role-option flex-1 border-2 rounded-lg p-4 text-center cursor-pointer transition-all hover:border-blue-400" data-role="user">
+                        <div class="text-2xl mb-2">👤</div>
+                        <div class="font-semibold">User</div>
+                        <div class="text-xs text-gray-500 mt-1">Standard worker access</div>
+                      </div>
+                      <div id="roleAdmin" class="role-option flex-1 border-2 rounded-lg p-4 text-center cursor-pointer transition-all hover:border-blue-400" data-role="admin">
+                        <div class="text-2xl mb-2">👑</div>
+                        <div class="font-semibold">Administrator</div>
+                        <div class="text-xs text-gray-500 mt-1">Full system access</div>
+                      </div>
+                    </div>
+                    <input type="hidden" id="selectedRole" name="role" value="user">
+                  </div>
+                  
+                  <div class="form-control mt-6">
+                    <button type="submit" class="btn btn-success text-white">Create Account</button>
+                  </div>
+                </form>
+                
+                <div id="statusMessage" class="text-center font-bold text-lg mt-4"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Worker List Display (Right Side) -->
+          <div class="flex-1">
+            <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">Registered Users</h1>
+            
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body">
+                <div class="flex justify-between items-center mb-4">
+                  <h2 class="text-xl font-semibold">All Users</h2>
+                  <button id="refreshButton" class="btn btn-sm btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
+                
+                <div class="scrollable-table">
+                  <table class="table w-full">
+                    <thead>
+                      <tr>
+                        <th class="sticky top-0 bg-base-200">First Name</th>
+                        <th class="sticky top-0 bg-base-200">Last Name</th>
+                        <th class="sticky top-0 bg-base-200">Employee ID</th>
+                        <th class="sticky top-0 bg-base-200">Username</th>
+                        <th class="sticky top-0 bg-base-200">Role</th>
+                      </tr>
+                    </thead>
+                    <tbody id="workersTableBody">
+                      <!-- Workers will be inserted here -->
+                      <tr>
+                        <td colspan="5" class="text-center py-4">Loading users...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                
+                <div id="workersCount" class="text-right mt-2 text-sm text-gray-500"></div>
+                <div id="workersStatus" class="text-center font-bold text-lg mt-4"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Sidebar with Dashboard Button -->
+    <div class="drawer-side">
+      <label for="my-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+      <ul class="menu bg-blue-400 text-white min-h-full w-80 p-4">
+        <!-- Dashboard Button -->
+        <li class="mb-3">
+          <a href="/dashboard" class="flex items-center gap-3 bg-blue-500 hover:bg-blue-600 transition-colors rounded-lg py-2 px-4 font-semibold shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            Dashboard
+          </a>
+        </li>
+        
+        <!-- Divider -->
+        <div class="border-t border-blue-300 my-2 opacity-50"></div>
+        
+
+
+
+  <script>
+    // Role selection handling
+    let selectedRole = 'user';
+    
+    const roleUserDiv = document.getElementById('roleUser');
+    const roleAdminDiv = document.getElementById('roleAdmin');
+    const selectedRoleInput = document.getElementById('selectedRole');
+    
+    function updateRoleSelection(role) {
+      selectedRole = role;
+      selectedRoleInput.value = role;
+      
+      // Update UI
+      if (role === 'user') {
+        roleUserDiv.classList.add('selected', 'border-blue-500', 'bg-blue-50');
+        roleAdminDiv.classList.remove('selected', 'border-blue-500', 'bg-blue-50');
+        roleAdminDiv.classList.add('border-gray-300');
+        roleUserDiv.classList.remove('border-gray-300');
+      } else {
+        roleAdminDiv.classList.add('selected', 'border-blue-500', 'bg-blue-50');
+        roleUserDiv.classList.remove('selected', 'border-blue-500', 'bg-blue-50');
+        roleUserDiv.classList.add('border-gray-300');
+        roleAdminDiv.classList.remove('border-gray-300');
+      }
+    }
+    
+    roleUserDiv.addEventListener('click', () => updateRoleSelection('user'));
+    roleAdminDiv.addEventListener('click', () => updateRoleSelection('admin'));
+    
+    // Set default selection
+    updateRoleSelection('user');
+    
+    // Function to show status message with auto-hide
+    function showStatusMessage(message, type) {
+      const statusMessage = document.getElementById("statusMessage");
+      statusMessage.textContent = message;
+      
+      let colorClass = '';
+      switch(type) {
+        case 'success':
+          colorClass = 'text-success';
+          break;
+        case 'error':
+          colorClass = 'text-error';
+          break;
+        case 'warning':
+          colorClass = 'text-warning';
+          break;
+        default:
+          colorClass = 'text-info';
+      }
+      
+      statusMessage.className = `text-center font-bold text-lg mt-4 ${colorClass}`;
+      
+      // Auto-hide after 3 seconds
+      setTimeout(() => {
+        if (statusMessage.textContent === message) {
+          statusMessage.classList.add('fade-out');
+          setTimeout(() => {
+            statusMessage.textContent = '';
+            statusMessage.className = 'text-center font-bold text-lg mt-4';
+            statusMessage.classList.remove('fade-out');
+          }, 3000);
+        }
+      }, 3000);
+    }
+    
+    // Worker creation form - uses different endpoints based on role
+    document.getElementById("workerForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      
+      const role = document.getElementById("selectedRole").value;
+      const data = {
+        first_name: document.getElementById("first_name").value.trim(),
+        last_name: document.getElementById("last_name").value.trim(),
+        employee_id: document.getElementById("employee_id").value.trim(),
+        username: document.getElementById("username").value.trim(),
+      };
+      
+      // Validate required fields
+      if (!data.first_name || !data.last_name || !data.employee_id || !data.username) {
+        showStatusMessage("Please fill in all fields", "error");
+        return;
+      }
+      
+      // Determine which endpoint to use based on role
+      const endpoint = role === 'admin' ? '/api/administrator' : '/api/worker';
+      
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(data),
+        });
+        
+        const result = await response.json();
+        
+        if (response.status === 409) {
+          showStatusMessage(`Employee ID ${data.employee_id} already exists`, "warning");
+        } else if (response.status === 200 || response.status === 201) {
+          const roleDisplay = role === 'admin' ? 'Administrator' : 'User';
+          showStatusMessage(`${roleDisplay} created successfully: ${data.first_name} ${data.last_name}`, "success");
+          document.getElementById("workerForm").reset();
+          updateRoleSelection('user'); // Reset to user selection
+          fetchAllWorkers();
+        } else {
+          showStatusMessage(result.error || result.message || "Unexpected error occurred.", "error");
+        }
+      } catch (error) {
+        console.error("Error creating worker:", error);
+        showStatusMessage("Error creating account: " + error.message, "error");
+      }
+    });
+    
+    // Function to fetch all workers (now includes role)
+    async function fetchAllWorkers() {
+      const tableBody = document.getElementById("workersTableBody");
+      const workersStatus = document.getElementById("workersStatus");
+      const workersCount = document.getElementById("workersCount");
+      
+      try {
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4">Loading users...</td></tr>';
+        
+        const response = await fetch('/api/workers/');
+        const result = await response.json();
+        
+        if (response.status === 200) {
+          if (result.workers && result.workers.length > 0) {
+            tableBody.innerHTML = '';
+            result.workers.forEach(worker => {
+              const row = document.createElement('tr');
+              const role = worker.role || 'user';
+              const roleBadge = role === 'admin' 
+                ? '<span class="role-badge role-admin">Admin</span>' 
+                : '<span class="role-badge role-user">User</span>';
+              
+              row.innerHTML = `
+                <td>${escapeHtml(worker.first_name)}</td>
+                <td>${escapeHtml(worker.last_name)}</td>
+                <td>${escapeHtml(worker.employee_id)}</td>
+                <td>${escapeHtml(worker.username)}</td>
+                <td class="text-center">${roleBadge}</td>
+              `;
+              tableBody.appendChild(row);
+            });
+            
+            // Count admins and users
+            const adminCount = result.workers.filter(w => w.role === 'admin').length;
+            const userCount = result.workers.filter(w => w.role === 'user' || !w.role).length;
+            workersCount.innerHTML = `Total: ${result.count} users (${adminCount} Admin, ${userCount} User)`;
+            workersStatus.textContent = "";
+          } else {
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4">No users found</td></tr>';
+            workersCount.innerHTML = "";
+          }
+        } else {
+          throw new Error(result.error || "Failed to fetch workers");
+        }
+      } catch (error) {
+        console.error("Error fetching workers:", error);
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-error">Error loading users</td></tr>';
+        workersStatus.textContent = "Error: " + error.message;
+        workersStatus.className = "text-center font-bold text-lg mt-4 text-error";
+        workersCount.innerHTML = "";
+      }
+    }
+    
+    // Helper to prevent XSS
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+    
+    // Refresh button click handler
+    const refreshBtn = document.getElementById("refreshButton");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", fetchAllWorkers);
+    }
+    
+    // Load workers when page loads
+    document.addEventListener('DOMContentLoaded', fetchAllWorkers);
+    
+    // Dropdown functionality
+    function toggleDropdown(event, id) {
+      event.stopPropagation();
+      const dropdownMenu = document.getElementById(id);
+      
+      // Close all other dropdowns
+      document.querySelectorAll('.dropdown-menu').forEach(menu => {
+        if (menu.id !== id) {
+          menu.style.display = 'none';
+        }
+      });
+      
+      // Toggle current dropdown
+      if (dropdownMenu.style.display === 'block') {
+        dropdownMenu.style.display = 'none';
+      } else {
+        dropdownMenu.style.display = 'block';
+      }
+    }
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(event) {
+      const isDropdownButton = event.target.closest('.dropdown-toggle');
+      if (!isDropdownButton) {
+        document.querySelectorAll('.dropdown-menu').forEach(menu => {
+          menu.style.display = 'none';
+        });
+      }
+    });
+    
+    // Close dropdowns on Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.dropdown-menu').forEach(menu => {
+          menu.style.display = 'none';
+        });
+      }
+    });
+  </script>
+</body>
+</html>

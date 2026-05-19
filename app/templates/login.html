@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Login - Company Portal</title>
+    <!-- Tailwind CSS and DaisyUI CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-base-200 min-h-screen">
+    <!-- Navbar with sample branding -->
+    <div class="navbar bg-base-100 shadow-sm px-4">
+        <div class="flex-1">
+            <a class="btn btn-ghost text-xl">daisyUI</a>
+        </div>
+        <div class="flex-none">
+            <span class="text-sm text-base-content/70">Employee Portal</span>
+        </div>
+    </div>
+
+    <!-- Main content - centered login form -->
+    <div class="flex items-center justify-center min-h-[calc(100vh-64px)]">
+        <div class="card w-96 bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl font-bold text-center justify-center mb-2">Employee Login</h2>
+                <p class="text-center text-base-content/70 text-sm mb-4">Enter your employee ID to access the portal</p>
+                
+                <div class="form-control">
+                    <label class="label" for="employeeid">
+                        <span class="label-text">Employee ID</span>
+                    </label>
+                    <input 
+                        type="text" 
+                        id="employeeid" 
+                        placeholder="e.g., EMP001" 
+                        class="input input-bordered w-full" 
+                        required
+                    />
+                </div>
+                
+                <div class="form-control mt-6">
+                    <button onclick="login()" class="btn btn-primary w-full">Login</button>
+                </div>
+                
+                <div id="error" class="text-center mt-4 min-h-[24px]"></div>
+                
+                <!-- Sample credentials hint (optional - for demo purposes) -->
+                <div class="divider text-xs text-base-content/50">sample IDs</div>
+                <div class="text-xs text-center text-base-content/50 space-y-1">
+                    <p>Admin: admin123</p>
+                    <p>Employee: emp001</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function login() {
+            let employeeid = document.getElementById("employeeid").value.trim();
+            let errorMsg = document.getElementById("error");
+
+            // Clear previous error
+            errorMsg.innerHTML = "";
+            errorMsg.classList.remove("text-error");
+
+            if (!employeeid) {
+                errorMsg.innerHTML = "⚠️ Please enter your Employee ID.";
+                errorMsg.classList.add("text-error", "font-medium");
+                return;
+            }
+
+            // Show loading state on button
+            const loginButton = document.querySelector('.btn-primary');
+            const originalText = loginButton.innerHTML;
+            loginButton.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Logging in...';
+            loginButton.disabled = true;
+
+            try {
+                const response = await fetch(`/api/worker/${encodeURIComponent(employeeid)}`);
+                
+                if (!response.ok) {
+                    loginButton.innerHTML = originalText;
+                    loginButton.disabled = false;
+                    
+                    if (response.status === 404) {
+                        errorMsg.innerHTML = "❌ Employee not found.";
+                    } else {
+                        errorMsg.innerHTML = `❌ Error: ${response.status}`;
+                    }
+                    errorMsg.classList.add("text-error", "font-medium");
+                    return;
+                }
+
+                const data = await response.json();
+                
+                if (data.employee_id) {
+                    // Store employee data in sessionStorage
+                    sessionStorage.setItem("employee", JSON.stringify(data));
+                    
+                    // Show success message briefly
+                    errorMsg.innerHTML = "✅ Login successful! Redirecting...";
+                    errorMsg.classList.add("text-success", "font-medium");
+                    
+                    // Check user role and redirect accordingly
+                    setTimeout(() => {
+                        if (data.role && data.role.toLowerCase() === 'admin') {
+                            // Admin redirects to dashboard
+                            window.location.href = "/dashboard";
+                        } else {
+                            // Regular user redirects to output
+                            window.location.href = "/output";
+                        }
+                    }, 500);
+                } else {
+                    loginButton.innerHTML = originalText;
+                    loginButton.disabled = false;
+                    errorMsg.innerHTML = data.error || "❌ Invalid employee data.";
+                    errorMsg.classList.add("text-error", "font-medium");
+                }
+            } catch (error) {
+                console.error("Login error:", error);
+                loginButton.innerHTML = originalText;
+                loginButton.disabled = false;
+                errorMsg.innerHTML = "❌ Failed to connect to server.";
+                errorMsg.classList.add("text-error", "font-medium");
+            }
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('employeeid').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                login();
+            }
+        });
+    </script>
+</body>
+</html>
