@@ -1,1 +1,1 @@
-web: gunicorn QR_SPEED.wsgi
+web: gunicorn my_project.wsgi
