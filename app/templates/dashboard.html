@@ -448,6 +448,13 @@
                                 </tbody>
                             </table>
                         </div>
+                        <div id="verificationPager" class="mt-3 flex items-center justify-between gap-2 hidden">
+                            <p id="verificationPageInfo" class="text-xs text-base-content/60">Page 1 of 1</p>
+                            <div class="flex items-center gap-2">
+                                <button type="button" id="verificationPrevBtn" class="btn btn-sm btn-ghost h-8 min-h-8">Prev</button>
+                                <button type="button" id="verificationNextBtn" class="btn btn-sm btn-ghost h-8 min-h-8">Next</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -776,6 +783,8 @@ const API_BASE_URL = window.location.origin;
     let verifySelectedIdx = null;
     let activeDetailRecord = null;
     let allVerificationLogs = [];
+    const VERIFICATION_LOGS_PAGE_SIZE = 10;
+    let verificationLogsPage = 1;
 
     function getVerificationState(row) {
         return String(row?.result || row?.status || "").toUpperCase().replace(/\s+/g, "_");
@@ -1336,6 +1345,7 @@ const API_BASE_URL = window.location.origin;
     function addVerificationEntryToTable(entry) {
         allVerificationLogs.unshift(normalizeVerificationLogRow(entry));
         if (allVerificationLogs.length > 500) allVerificationLogs.length = 500;
+        verificationLogsPage = 1;
         updateDashboardCounters();
         renderVerificationLogsTable();
         const first = document.querySelector("#verificationHistoryTable tr:first-child");
@@ -1356,10 +1366,12 @@ const API_BASE_URL = window.location.origin;
             const data = await response.json();
             const logs = data.logs || [];
             allVerificationLogs = logs.map(normalizeVerificationLogRow);
+            verificationLogsPage = 1;
             updateDashboardCounters();
             renderVerificationLogsTable();
         } catch (error) {
             allVerificationLogs = [];
+            verificationLogsPage = 1;
             updateDashboardCounters();
             if (tableBody) {
                 tableBody.innerHTML = `
@@ -1655,10 +1667,25 @@ const API_BASE_URL = window.location.origin;
                 const h = document.getElementById("verificationFilterStatus");
                 if (h) h.value = v;
                 syncVerificationStatusLabel();
+                verificationLogsPage = 1;
                 renderVerificationLogsTable();
                 document.getElementById("verificationStatusTrigger")?.blur();
             });
         });
+    }
+
+    function updateVerificationPager(filteredCount) {
+        const pager = document.getElementById("verificationPager");
+        const info = document.getElementById("verificationPageInfo");
+        const prevBtn = document.getElementById("verificationPrevBtn");
+        const nextBtn = document.getElementById("verificationNextBtn");
+        if (!pager || !info || !prevBtn || !nextBtn) return;
+        const totalPages = Math.max(1, Math.ceil(filteredCount / VERIFICATION_LOGS_PAGE_SIZE));
+        verificationLogsPage = Math.min(Math.max(verificationLogsPage, 1), totalPages);
+        info.textContent = `Page ${verificationLogsPage} of ${totalPages}`;
+        prevBtn.disabled = verificationLogsPage <= 1;
+        nextBtn.disabled = verificationLogsPage >= totalPages;
+        pager.classList.toggle("hidden", filteredCount <= VERIFICATION_LOGS_PAGE_SIZE);
     }
 
     function getFilteredVerificationLogs() {
@@ -1718,6 +1745,7 @@ const API_BASE_URL = window.location.origin;
             }
         }
         if (total === 0) {
+            updateVerificationPager(0);
             tableBody.innerHTML = `
                 <tr>
                     <td colspan="9" class="text-center py-8 text-base-content/50">
@@ -1728,6 +1756,7 @@ const API_BASE_URL = window.location.origin;
             return;
         }
         if (filtered.length === 0) {
+            updateVerificationPager(0);
             tableBody.innerHTML = `
                 <tr>
                     <td colspan="9" class="text-center py-8 text-base-content/50">
@@ -1739,7 +1768,12 @@ const API_BASE_URL = window.location.origin;
             document.getElementById("verificationClearFiltersInline")?.addEventListener("click", clearVerificationFilters);
             return;
         }
-        tableBody.innerHTML = filtered
+        const totalPages = Math.max(1, Math.ceil(filtered.length / VERIFICATION_LOGS_PAGE_SIZE));
+        verificationLogsPage = Math.min(Math.max(verificationLogsPage, 1), totalPages);
+        const start = (verificationLogsPage - 1) * VERIFICATION_LOGS_PAGE_SIZE;
+        const pageRows = filtered.slice(start, start + VERIFICATION_LOGS_PAGE_SIZE);
+        updateVerificationPager(filtered.length);
+        tableBody.innerHTML = pageRows
             .map((row) => {
                 const shortUuid = row.qr_uuid ? row.qr_uuid.substring(0, 8) + "..." : "N/A";
                 const timeStr = new Date(row.timestamp).toLocaleString();
@@ -1774,6 +1808,7 @@ const API_BASE_URL = window.location.origin;
         if (dff) dff.value = "";
         const dtt = document.getElementById("verificationFilterDateTo");
         if (dtt) dtt.value = "";
+        verificationLogsPage = 1;
         renderVerificationLogsTable();
     }
 
@@ -2377,10 +2412,27 @@ const API_BASE_URL = window.location.origin;
     });
     document.getElementById('printSelectedQrBtn')?.addEventListener('click', () => printSelectedQrBatch());
     document.getElementById("refreshLogsBtn")?.addEventListener("click", fetchBackendLogsForRecentTable);
-    document.getElementById("verificationLogSearch")?.addEventListener("input", () => renderVerificationLogsTable());
-    document.getElementById("verificationFilterDateFrom")?.addEventListener("change", () => renderVerificationLogsTable());
-    document.getElementById("verificationFilterDateTo")?.addEventListener("change", () => renderVerificationLogsTable());
+    document.getElementById("verificationLogSearch")?.addEventListener("input", () => {
+        verificationLogsPage = 1;
+        renderVerificationLogsTable();
+    });
+    document.getElementById("verificationFilterDateFrom")?.addEventListener("change", () => {
+        verificationLogsPage = 1;
+        renderVerificationLogsTable();
+    });
+    document.getElementById("verificationFilterDateTo")?.addEventListener("change", () => {
+        verificationLogsPage = 1;
+        renderVerificationLogsTable();
+    });
     document.getElementById("verificationClearFiltersBtn")?.addEventListener("click", clearVerificationFilters);
+    document.getElementById("verificationPrevBtn")?.addEventListener("click", () => {
+        verificationLogsPage = Math.max(1, verificationLogsPage - 1);
+        renderVerificationLogsTable();
+    });
+    document.getElementById("verificationNextBtn")?.addEventListener("click", () => {
+        verificationLogsPage += 1;
+        renderVerificationLogsTable();
+    });
     document.getElementById("downloadLogsExcelBtn")?.addEventListener("click", downloadVerificationLogsForDay);
     initVerificationStatusDropdown();
     syncVerificationStatusLabel();
