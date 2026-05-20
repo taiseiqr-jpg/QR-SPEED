@@ -284,7 +284,6 @@
                     <p class="text-xs font-semibold text-base-content/50 uppercase tracking-wider px-4 mb-3">Main</p>
                     <ul class="space-y-1">
                         <li><a href="#" id="dashboardLink" class="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary text-primary-content font-medium"><i class="fas fa-users w-5"></i><span>Dashboard</span></a></li>
-                        <li><a href="#" id="inventoryLink" class="flex items-center gap-3 px-4 py-3 rounded-lg text-base-content/70 hover:bg-base-200"><i class="fas fa-boxes w-5"></i><span>Inventory</span></a></li>
                     </ul>
                 </div>
                 <div class="mb-4">
@@ -536,6 +535,7 @@
                     </div>
                     <div class="flex gap-2 flex-wrap items-center">
                         <button id="refreshQrListBtn" class="btn btn-outline btn-sm gap-2"><i class="fas fa-sync-alt"></i> Refresh</button>
+                        <button type="button" id="deleteSelectedQrBtn" class="btn btn-error btn-sm gap-2" disabled><i class="fas fa-trash-alt"></i> Delete selected</button>
                         <button type="button" id="printSelectedQrBtn" class="btn btn-primary btn-sm gap-2" disabled><i class="fas fa-print"></i> Print selected</button>
                         <button type="button" id="selectAllFilteredQrBtn" class="btn btn-outline btn-sm gap-2"><i class="fas fa-check-double"></i> Select all in list</button>
                         <button type="button" id="clearQrSelectionBtn" class="btn btn-ghost btn-sm gap-2"><i class="fas fa-times"></i> Clear selection</button>
@@ -588,6 +588,14 @@
                 </div>
 
                 <div id="qrListGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+
+                <div id="qrListPager" class="mt-4 flex items-center justify-between gap-2 hidden">
+                    <p id="qrListPageInfo" class="text-xs text-base-content/60">Page 1 of 1</p>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="qrListPrevBtn" class="btn btn-sm btn-ghost h-8 min-h-8">Prev</button>
+                        <button type="button" id="qrListNextBtn" class="btn btn-sm btn-ghost h-8 min-h-8">Next</button>
+                    </div>
+                </div>
 
                 <div id="qrListEmpty" class="hidden text-center py-20">
                     <i class="fas fa-inbox text-6xl text-base-content/20 mb-4 block"></i>
@@ -725,6 +733,7 @@
                     <button id="detailDownloadBtn" class="btn btn-primary btn-sm gap-2"><i class="fas fa-download"></i> Download PNG</button>
                     <button id="detailPrintBtn"    class="btn btn-outline btn-sm gap-2"><i class="fas fa-print"></i> Print</button>
                     <button id="detailCopyDataBtn" class="btn btn-ghost btn-sm gap-2"><i class="fas fa-copy"></i> Copy QR Data</button>
+                    <button id="detailDeleteBtn" class="btn btn-error btn-sm gap-2"><i class="fas fa-trash-alt"></i> Delete</button>
                 </div>
             </div>
         </div>
@@ -773,6 +782,8 @@ const API_BASE_URL = window.location.origin;
     let html5QrCode = null, isScanning = false, isProcessing = false;
     let pendingUserInput = { item_name:'', part_name:'', part_maker:'', lot_no:'' };
     let allQrRecords = [];
+    const QR_LIST_PAGE_SIZE = 20;
+    let qrListPage = 1;
     let selectedQrUuids = new Set();
     let masterListRows = [];
     let selectedMasterDeleteRows = new Set();
@@ -1558,11 +1569,138 @@ const API_BASE_URL = window.location.origin;
     }
 
     function updateQrListSelectionUi() {
-        const btn = document.getElementById("printSelectedQrBtn");
-        if (!btn) return;
         const n = selectedQrUuids.size;
-        btn.disabled = n === 0;
-        btn.innerHTML = `<i class="fas fa-print mr-1"></i> Print selected${n ? ` (${n})` : ""}`;
+        const printBtn = document.getElementById("printSelectedQrBtn");
+        if (printBtn) {
+            printBtn.disabled = n === 0;
+            printBtn.innerHTML = `<i class="fas fa-print mr-1"></i> Print selected${n ? ` (${n})` : ""}`;
+        }
+        const deleteBtn = document.getElementById("deleteSelectedQrBtn");
+        if (deleteBtn) {
+            deleteBtn.disabled = n === 0;
+            deleteBtn.innerHTML = `<i class="fas fa-trash-alt mr-1"></i> Delete selected${n ? ` (${n})` : ""}`;
+        }
+    }
+
+    async function deleteQrCode(uuid) {
+        const record = allQrRecords.find((r) => r.qr_uuid === uuid);
+        if (!record) return;
+
+        const result = await Swal.fire({
+            title: "Delete this QR code?",
+            html: `Delete <strong>${escCell(record.item)}</strong> (${escCell(record.part_name)})?<br>This action cannot be undone.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, delete",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#dc2626",
+            reverseButtons: true,
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            const resp = await fetch(`${API_BASE_URL}/api/qr/${encodeURIComponent(uuid)}`, {
+                method: "DELETE",
+                headers: { Accept: "application/json" },
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) throw new Error(data.error || data.message || `Server returned ${resp.status}`);
+
+            allQrRecords = allQrRecords.filter((r) => r.qr_uuid !== uuid);
+            selectedQrUuids.delete(uuid);
+            if (activeDetailRecord?.qr_uuid === uuid) {
+                document.getElementById("qrDetailModal")?.close();
+                activeDetailRecord = null;
+            }
+
+            const filtered = getFilteredRecords();
+            const totalPages = Math.max(1, Math.ceil(filtered.length / QR_LIST_PAGE_SIZE));
+            if (qrListPage > totalPages) qrListPage = totalPages;
+
+            updateDashboardCounters();
+            updateQrListBadge(allQrRecords.length);
+            renderQrList();
+            updateQrListSelectionUi();
+            showToast(data.message || "QR code deleted", "success");
+        } catch (e) {
+            await Swal.fire({
+                title: "Delete failed",
+                text: e.message || "Could not delete QR code.",
+                icon: "error",
+            });
+        }
+    }
+
+    async function deleteSelectedQrCodes() {
+        const uuids = Array.from(selectedQrUuids);
+        if (!uuids.length) {
+            showToast("Select at least one QR code to delete.", "warning");
+            return;
+        }
+
+        const result = await Swal.fire({
+            title: "Delete selected QR codes?",
+            html: `You are about to delete <strong>${uuids.length}</strong> QR code(s).<br>This action cannot be undone.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, delete",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#dc2626",
+            reverseButtons: true,
+        });
+        if (!result.isConfirmed) return;
+
+        const deleteBtn = document.getElementById("deleteSelectedQrBtn");
+        if (deleteBtn) deleteBtn.disabled = true;
+
+        let deleted = 0;
+        const errors = [];
+        for (const uuid of uuids) {
+            try {
+                const resp = await fetch(`${API_BASE_URL}/api/qr/${encodeURIComponent(uuid)}`, {
+                    method: "DELETE",
+                    headers: { Accept: "application/json" },
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.error || data.message || `Server returned ${resp.status}`);
+                allQrRecords = allQrRecords.filter((r) => r.qr_uuid !== uuid);
+                selectedQrUuids.delete(uuid);
+                deleted += 1;
+            } catch (e) {
+                errors.push(e.message || "Delete failed");
+            }
+        }
+        if (activeDetailRecord && !allQrRecords.some((r) => r.qr_uuid === activeDetailRecord.qr_uuid)) {
+            document.getElementById("qrDetailModal")?.close();
+            activeDetailRecord = null;
+        }
+
+        const filtered = getFilteredRecords();
+        const totalPages = Math.max(1, Math.ceil(filtered.length / QR_LIST_PAGE_SIZE));
+        if (qrListPage > totalPages) qrListPage = totalPages;
+
+        updateDashboardCounters();
+        updateQrListBadge(allQrRecords.length);
+        renderQrList();
+        updateQrListSelectionUi();
+
+        if (deleted > 0 && errors.length === 0) {
+            await Swal.fire({
+                title: "Deleted",
+                text: `${deleted} QR code(s) deleted successfully.`,
+                icon: "success",
+                timer: 1700,
+                showConfirmButton: false,
+            });
+        } else if (deleted > 0) {
+            showToast(`${deleted} deleted, ${errors.length} failed.`, "warning");
+        } else {
+            await Swal.fire({
+                title: "Delete failed",
+                text: errors[0] || "Could not delete selected QR codes.",
+                icon: "error",
+            });
+        }
     }
 
     async function printSelectedQrBatch() {
@@ -2237,6 +2375,7 @@ const API_BASE_URL = window.location.origin;
             const records = Array.isArray(data)?data:(data.qr_records||data.records||data.data||[]);
             allQrRecords = records.map(normaliseRecord);
             selectedQrUuids.clear();
+            qrListPage = 1;
             document.getElementById('qrListLoading').classList.add('hidden');
             updateDashboardCounters();
             renderQrList();
@@ -2274,6 +2413,20 @@ const API_BASE_URL = window.location.origin;
         return `<span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${s.cls}">${s.icon} ${s.label}</span>`;
     }
 
+    function updateQrListPager(filteredCount) {
+        const pager = document.getElementById("qrListPager");
+        const info = document.getElementById("qrListPageInfo");
+        const prevBtn = document.getElementById("qrListPrevBtn");
+        const nextBtn = document.getElementById("qrListNextBtn");
+        if (!pager || !info || !prevBtn || !nextBtn) return;
+        const totalPages = Math.max(1, Math.ceil(filteredCount / QR_LIST_PAGE_SIZE));
+        qrListPage = Math.min(Math.max(qrListPage, 1), totalPages);
+        info.textContent = `Page ${qrListPage} of ${totalPages} · ${filteredCount} QR code${filteredCount === 1 ? "" : "s"}`;
+        prevBtn.disabled = qrListPage <= 1;
+        nextBtn.disabled = qrListPage >= totalPages;
+        pager.classList.toggle("hidden", filteredCount <= QR_LIST_PAGE_SIZE);
+    }
+
     function renderQrList() {
         const filtered=getFilteredRecords();
         const grid=document.getElementById('qrListGrid');
@@ -2281,37 +2434,50 @@ const API_BASE_URL = window.location.origin;
         document.getElementById('statGood').textContent    = allQrRecords.filter(r=>r.status==='GOOD').length;
         document.getElementById('statNoGood').textContent  = allQrRecords.filter(r=>r.status==='NO_GOOD').length;
         document.getElementById('statPending').textContent = allQrRecords.filter(r=>r.status==='PENDING').length;
-        if(filtered.length===0){grid.innerHTML='';document.getElementById('qrListEmpty').classList.remove('hidden');return;}
+        if(filtered.length===0){
+            updateQrListPager(0);
+            grid.innerHTML='';
+            document.getElementById('qrListEmpty').classList.remove('hidden');
+            return;
+        }
         document.getElementById('qrListEmpty').classList.add('hidden');
-        grid.innerHTML = filtered.map(r=>{
+        const totalPages = Math.max(1, Math.ceil(filtered.length / QR_LIST_PAGE_SIZE));
+        qrListPage = Math.min(Math.max(qrListPage, 1), totalPages);
+        const start = (qrListPage - 1) * QR_LIST_PAGE_SIZE;
+        const pageRows = filtered.slice(start, start + QR_LIST_PAGE_SIZE);
+        updateQrListPager(filtered.length);
+        grid.innerHTML = pageRows.map(r=>{
             const sid = r.qr_uuid.replace(/-/g,'');
             const sel = selectedQrUuids.has(r.qr_uuid);
+            const uuidEsc = escCell(r.qr_uuid);
             return `
             <div class="qr-list-card flex gap-2 items-start ${sel?'qr-list-card--selected':''}">
                 <label class="shrink-0 pt-0.5 cursor-pointer" onclick="event.stopPropagation()">
-                    <input type="checkbox" class="checkbox checkbox-sm qr-list-select-chk border-base-300" data-uuid="${r.qr_uuid}" ${sel?'checked':''}/>
+                    <input type="checkbox" class="checkbox checkbox-sm qr-list-select-chk border-base-300" data-uuid="${uuidEsc}" ${sel?'checked':''}/>
                 </label>
-                <div class="flex-1 min-w-0 qr-list-card-open" onclick="openQrDetail('${r.qr_uuid}')">
+                <div class="flex-1 min-w-0 qr-list-card-open cursor-pointer" data-uuid="${uuidEsc}">
                 <div class="flex items-start gap-3">
                     <div class="mini-qr" id="mini-${sid}"></div>
                     <div class="flex-1 min-w-0">
-                        <p class="font-bold text-sm text-base-content truncate">${r.item}</p>
-                        <p class="text-xs text-base-content/60 truncate">${r.part_name} · ${r.part_maker}</p>
-                        <p class="text-xs text-base-content/50 mt-0.5">Lot: ${r.lot_no}</p>
+                        <p class="font-bold text-sm text-base-content truncate">${escCell(r.item)}</p>
+                        <p class="text-xs text-base-content/60 truncate">${escCell(r.part_name)} · ${escCell(r.part_maker)}</p>
+                        <p class="text-xs text-base-content/50 mt-0.5">Lot: ${escCell(r.lot_no)}</p>
                         <div class="mt-2 flex items-center justify-between gap-1">
                             ${statusBadgeHtml(r.status)}
-                            <span class="text-xs text-base-content/30 font-mono">${r.qr_uuid.substring(0,8)}…</span>
+                            <span class="text-xs text-base-content/30 font-mono">${escCell(r.qr_uuid.substring(0,8))}…</span>
                         </div>
                     </div>
                 </div>
                 </div>
+                <button type="button" class="btn btn-ghost btn-xs text-error qr-list-del shrink-0" data-uuid="${uuidEsc}" title="Delete QR code" onclick="event.stopPropagation()"><i class="fas fa-trash-alt"></i></button>
             </div>`;
         }).join('');
         setTimeout(()=>{
-            filtered.forEach(r=>{
+            pageRows.forEach(r=>{
                 const el=document.getElementById(`mini-${r.qr_uuid.replace(/-/g,'')}`);
-                if(!el||el.dataset.rendered) return;
-                el.dataset.rendered='1';
+                if(!el) return;
+                el.dataset.rendered='';
+                el.innerHTML='';
                 try{ new QRCode(el,{text:JSON.stringify(r.qr_data),width:76,height:76,colorDark:"#000000",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
             });
         },60);
@@ -2378,10 +2544,32 @@ const API_BASE_URL = window.location.origin;
     document.getElementById('refreshQrListBtn')?.addEventListener('click', fetchQrList);
     document.getElementById('retryQrListBtn')?.addEventListener('click', fetchQrList);
 
-    const debouncedRenderQrList = debounce(() => renderQrList(), 200);
+    const debouncedRenderQrList = debounce(() => {
+        qrListPage = 1;
+        renderQrList();
+    }, 200);
     document.getElementById('qrListSearch')?.addEventListener('input', debouncedRenderQrList);
-    document.getElementById('qrListStatusFilter')?.addEventListener('change', () => renderQrList());
-    document.getElementById('qrListSortBy')?.addEventListener('change', () => renderQrList());
+    document.getElementById('qrListStatusFilter')?.addEventListener('change', () => {
+        qrListPage = 1;
+        renderQrList();
+    });
+    document.getElementById('qrListSortBy')?.addEventListener('change', () => {
+        qrListPage = 1;
+        renderQrList();
+    });
+    document.getElementById('qrListGrid')?.addEventListener('click', (e) => {
+        const delBtn = e.target.closest('.qr-list-del');
+        if (delBtn) {
+            const uuid = delBtn.getAttribute('data-uuid');
+            if (uuid) deleteQrCode(uuid);
+            return;
+        }
+        const openEl = e.target.closest('.qr-list-card-open');
+        if (openEl) {
+            const uuid = openEl.getAttribute('data-uuid');
+            if (uuid) openQrDetail(uuid);
+        }
+    });
     document.getElementById('qrListGrid')?.addEventListener('change', (e) => {
         const chk = e.target.closest('.qr-list-select-chk');
         if (!chk) return;
@@ -2411,6 +2599,19 @@ const API_BASE_URL = window.location.origin;
         updateQrListSelectionUi();
     });
     document.getElementById('printSelectedQrBtn')?.addEventListener('click', () => printSelectedQrBatch());
+    document.getElementById('deleteSelectedQrBtn')?.addEventListener('click', () => deleteSelectedQrCodes());
+    document.getElementById('qrListPrevBtn')?.addEventListener('click', () => {
+        qrListPage = Math.max(1, qrListPage - 1);
+        renderQrList();
+    });
+    document.getElementById('qrListNextBtn')?.addEventListener('click', () => {
+        qrListPage += 1;
+        renderQrList();
+    });
+    document.getElementById('detailDeleteBtn')?.addEventListener('click', () => {
+        if (!activeDetailRecord?.qr_uuid) return;
+        deleteQrCode(activeDetailRecord.qr_uuid);
+    });
     document.getElementById("refreshLogsBtn")?.addEventListener("click", fetchBackendLogsForRecentTable);
     document.getElementById("verificationLogSearch")?.addEventListener("input", () => {
         verificationLogsPage = 1;
@@ -2519,7 +2720,6 @@ const API_BASE_URL = window.location.origin;
     });
     document.getElementById("qrVerifyLink")  ?.addEventListener("click", e=>{e.preventDefault();openUserInputModal();closeSidebar();});
     document.getElementById("qrListLink")    ?.addEventListener("click", e=>{e.preventDefault();setActiveView('qrListView','qrListLink');fetchQrList();closeSidebar();});
-    document.getElementById("inventoryLink") ?.addEventListener("click", e=>{e.preventDefault();alert("Inventory module coming soon");});
     document.getElementById("confirmUserInputBtn")?.addEventListener("click", onConfirmUserInput);
     document.getElementById("cancelUserInputBtn") ?.addEventListener("click", closeUserInputModal);
     document.getElementById("restartScannerBtn")  ?.addEventListener("click", ()=>{if(document.getElementById("qrScannerModal").open)restartScanner();});
