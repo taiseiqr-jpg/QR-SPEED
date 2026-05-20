@@ -764,7 +764,6 @@ const API_BASE_URL = window.location.origin;
     const VERIFICATION_LOGS_EXPORT_URL = `${API_BASE_URL}/api/verification/logs/export`;
 
     let html5QrCode = null, isScanning = false, isProcessing = false;
-    let scanCount = 0, verifiedCount = 0, nogoodCount = 0;
     let pendingUserInput = { item_name:'', part_name:'', part_maker:'', lot_no:'' };
     let allQrRecords = [];
     let selectedQrUuids = new Set();
@@ -777,6 +776,45 @@ const API_BASE_URL = window.location.origin;
     let verifySelectedIdx = null;
     let activeDetailRecord = null;
     let allVerificationLogs = [];
+
+    function getVerificationState(row) {
+        return String(row?.result || row?.status || "").toUpperCase().replace(/\s+/g, "_");
+    }
+
+    function updateDashboardCounters() {
+        const totalScans = allVerificationLogs.length;
+        const goodScans = allVerificationLogs.filter((row) => getVerificationState(row) === "GOOD").length;
+        const noGoodScans = allVerificationLogs.filter((row) => getVerificationState(row) === "NO_GOOD").length;
+        document.getElementById("scanCountDisplay").textContent = totalScans;
+        document.getElementById("verifiedCountDisplay").textContent = goodScans;
+        document.getElementById("nogoodCountDisplay").textContent = noGoodScans;
+        document.getElementById("totalQrCount").textContent = allQrRecords.length;
+    }
+
+    async function refreshDashboardCountsOnly() {
+        try {
+            const [logsRes, qrRes] = await Promise.allSettled([
+                fetch(VERIFICATION_LOGS_URL, { method: "GET", headers: { "Content-Type": "application/json" } }),
+                fetch(LIST_QR_URL, { method: "GET", headers: { "Content-Type": "application/json" } }),
+            ]);
+
+            if (logsRes.status === "fulfilled" && logsRes.value.ok) {
+                const logsData = await logsRes.value.json();
+                const logs = Array.isArray(logsData.logs) ? logsData.logs : [];
+                allVerificationLogs = logs.map(normalizeVerificationLogRow);
+            }
+
+            if (qrRes.status === "fulfilled" && qrRes.value.ok) {
+                const qrData = await qrRes.value.json();
+                const records = Array.isArray(qrData) ? qrData : (qrData.qr_records || qrData.records || qrData.data || []);
+                allQrRecords = records.map(normaliseRecord);
+            }
+
+            updateDashboardCounters();
+        } catch (error) {
+            console.error("Auto-refresh counters failed:", error);
+        }
+    }
 
     // Debug console styling
     const DEBUG_STYLES = {
@@ -1298,6 +1336,7 @@ const API_BASE_URL = window.location.origin;
     function addVerificationEntryToTable(entry) {
         allVerificationLogs.unshift(normalizeVerificationLogRow(entry));
         if (allVerificationLogs.length > 500) allVerificationLogs.length = 500;
+        updateDashboardCounters();
         renderVerificationLogsTable();
         const first = document.querySelector("#verificationHistoryTable tr:first-child");
         if (first) {
@@ -1317,9 +1356,11 @@ const API_BASE_URL = window.location.origin;
             const data = await response.json();
             const logs = data.logs || [];
             allVerificationLogs = logs.map(normalizeVerificationLogRow);
+            updateDashboardCounters();
             renderVerificationLogsTable();
         } catch (error) {
             allVerificationLogs = [];
+            updateDashboardCounters();
             if (tableBody) {
                 tableBody.innerHTML = `
                 <tr>
@@ -1368,15 +1409,6 @@ const API_BASE_URL = window.location.origin;
                     <div class="mt-2 text-xs"><span class="font-semibold">QR UUID:</span> <code>${qrData.qr_uuid}</code></div>
                 </div>
             </div>`;
-        scanCount++;
-        document.getElementById('scanCountDisplay').textContent = scanCount;
-        if(ok){
-            verifiedCount++;
-            document.getElementById('verifiedCountDisplay').textContent=verifiedCount;
-        } else {
-            nogoodCount++;
-            document.getElementById('nogoodCountDisplay').textContent=nogoodCount;
-        }
         const verificationEntry = {
             timestamp: new Date().toISOString(),
             qr_uuid: qrData.qr_uuid,
@@ -1562,6 +1594,7 @@ const API_BASE_URL = window.location.origin;
             }
         }
         allVerificationLogs = allVerificationLogs.filter((x) => x.row_uid !== row.row_uid);
+        updateDashboardCounters();
         renderVerificationLogsTable();
         showToast("Verification log deleted", "success");
     }
@@ -2170,6 +2203,7 @@ const API_BASE_URL = window.location.origin;
             allQrRecords = records.map(normaliseRecord);
             selectedQrUuids.clear();
             document.getElementById('qrListLoading').classList.add('hidden');
+            updateDashboardCounters();
             renderQrList();
             updateQrListSelectionUi();
             updateQrListBadge(allQrRecords.length);
@@ -2273,7 +2307,8 @@ const API_BASE_URL = window.location.origin;
             if (response.ok) {
                 const data = await response.json();
                 const records = Array.isArray(data) ? data : (data.qr_records || data.records || data.data || []);
-                document.getElementById('totalQrCount').textContent = records.length;
+            allQrRecords = records.map(normaliseRecord);
+            updateDashboardCounters();
             }
         } catch (error) {
             console.error('Failed to fetch QR count:', error);
@@ -2358,6 +2393,33 @@ const API_BASE_URL = window.location.origin;
         fetchBackendLogsForRecentTable();
         fetchTotalQrCount();
     }, 1200);
+
+    const DASHBOARD_COUNTERS_REFRESH_MS = 15000;
+    let dashboardCountersRefreshTimer = null;
+
+    function startDashboardCountersAutoRefresh() {
+        if (dashboardCountersRefreshTimer) return;
+        dashboardCountersRefreshTimer = setInterval(() => {
+            if (!document.hidden) refreshDashboardCountsOnly();
+        }, DASHBOARD_COUNTERS_REFRESH_MS);
+    }
+
+    function stopDashboardCountersAutoRefresh() {
+        if (!dashboardCountersRefreshTimer) return;
+        clearInterval(dashboardCountersRefreshTimer);
+        dashboardCountersRefreshTimer = null;
+    }
+
+    startDashboardCountersAutoRefresh();
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            stopDashboardCountersAutoRefresh();
+            return;
+        }
+        refreshDashboardCountsOnly();
+        startDashboardCountersAutoRefresh();
+    });
+    window.addEventListener("beforeunload", stopDashboardCountersAutoRefresh);
 
     const VIEWS = ['dashboardView','generateQrView','qrListView'];
     const LINKS = ['dashboardLink','generateQrLink','qrListLink'];
